@@ -1,5 +1,5 @@
 // ====== UI ======
-const VERSION_APP = "12"; // súbela junto con VERSION en sw.js
+const VERSION_APP = "13"; // súbela junto con VERSION en sw.js
 const $ = s => document.querySelector(s);
 function toast(m) {
   let box = $("#toasts");
@@ -243,6 +243,8 @@ const VIEWS = {
     <p>Si <b>Medir</b> no te entiende, haz estas dos pruebas y manda una captura del resultado a quien te ayuda con la app. No se guarda ni se envía nada.</p>
     <button class="btn sec" id="pt1">1. Probar el reconocimiento (di «uno, dos, tres»)</button>
     <button class="btn sec" id="pt2">2. Usar el micrófono 2 s y luego probar el reconocimiento</button>
+    <button class="btn" id="pt3">3. Prueba de escuchas seguidas (minuto y medio)</button>
+    <p class="sub">Para la prueba 3: toca el botón y <b>cuenta en voz alta sin parar</b> («uno, dos, tres, cuatro…») hasta que diga TERMINADO. No toques nada mientras tanto.</p>
     <pre id="pt-out" class="tecnico" aria-live="polite"></pre></div>
     <div class="card"><h2>🔒 Datos y privacidad</h2>
     <p><b>Tu historial y tus grabaciones se quedan en este dispositivo.</b> No hay servidor de Voz Clara ni cuentas.</p>
@@ -314,7 +316,42 @@ function pruebaTecnica() {
     listo = true; b.disabled = false; b.textContent = "2b. Ahora toca aquí y di «uno, dos, tres»";
     out.textContent = `Micrófono OK (nivel máximo ${nivel.toFixed(0)} dB). Ahora toca el botón «2b».`;
   };
-  const previo = cleanup; cleanup = () => { previo && previo(); rec && rec.abort(); };
+  // Prueba 3: varias escuchas seguidas con distintas pausas y variantes, para saber qué tolera este teléfono.
+  let serie = null;
+  $("#pt3").onclick = async () => {
+    if (!SR) { out.textContent = entorno() + "\n\nEste navegador no trae reconocimiento de voz."; return; }
+    const b = $("#pt3"); b.disabled = true; $("#pt1").disabled = $("#pt2").disabled = true; pantallaActiva(true);
+    const vivo = () => !!$("#pt-out") && serie === ctl, ctl = serie = {}, espera = ms => new Promise(r => setTimeout(r, ms));
+    const pasos = [[0, "nueva"], [1000, "nueva"], [3000, "nueva"], [6000, "nueva"], [10000, "nueva"], [1000, "tras usar micrófono"], [1000, "misma sesión reutilizada"], [1000, "nueva"],
+      [1000, "nueva", "abort"], [1000, "nueva"], [1000, "nueva", "stop+abort"], [1000, "nueva"]];
+    const lineas = [], cab = "PRUEBA 3 · escuchas seguidas (v" + VERSION_APP + (IS_STANDALONE ? ", instalada" : ", navegador") + ")\nSigue contando en voz alta…\n";
+    let r = null;
+    for (let i = 0; i < pasos.length && vivo(); i++) {
+      const [pausa, modo, cierre = "stop"] = pasos[i];
+      out.textContent = cab + lineas.join("\n") + `\n${i + 1}) esperando ${pausa / 1000} s…`;
+      if (pausa) await espera(pausa);
+      if (modo === "tras usar micrófono") { try { const st = await navigator.mediaDevices.getUserMedia({ audio: true }); await espera(1000); st.getTracks().forEach(t => t.stop()); await espera(300); } catch (_) {} }
+      if (!vivo()) break;
+      if (modo !== "misma sesión reutilizada" || !r) { r = new SR(); r.lang = "es-MX"; r.continuous = true; r.interimResults = true; }
+      ctl.r = r;
+      out.textContent = cab + lineas.join("\n") + `\n${i + 1}) escuchando…`;
+      const res = await new Promise(listo => {
+        const d = { son: false, txt: "", err: "" }; let hecho = false; const fin = () => { if (!hecho) { hecho = true; listo(d); } };
+        r.onsoundstart = r.onspeechstart = () => { d.son = true; };
+        r.onresult = e => { const u = e.results && e.results[e.results.length - 1]; if (u && u[0]) d.txt = u[0].transcript; };
+        r.onerror = e => { d.err = d.err ? d.err + "+" + e.error : e.error; };
+        r.onend = () => { if (cierre === "stop+abort") { try { r.abort(); } catch (_) {} } fin(); };
+        try { r.start(); } catch (e) { d.err = "no arrancó: " + e.name; return fin(); }
+        setTimeout(() => { try { cierre === "abort" ? r.abort() : r.stop(); } catch (_) {} setTimeout(fin, 1500); }, 3500);
+      });
+      lineas.push(`${i + 1}) pausa ${pausa / 1000} s, ${modo}${cierre === "stop" ? "" : ", cierre " + cierre}: ${res.txt ? "OYÓ «" + res.txt.trim().slice(-16) + "»" : res.son ? "sonido sin texto" : "SORDA"}${res.err && res.err !== "aborted" ? " [" + res.err.replace(/\+?aborted/g, "") + "]" : ""}`);
+    }
+    pantallaActiva(false);
+    if (!$("#pt-out") || serie !== ctl) return;
+    serie = null; b.disabled = false; $("#pt1").disabled = $("#pt2").disabled = false;
+    out.textContent = "PRUEBA 3 · TERMINADO (v" + VERSION_APP + (IS_STANDALONE ? ", instalada" : ", navegador") + ")\n" + lineas.join("\n") + "\n\nManda una captura de este recuadro.";
+  };
+  const previo = cleanup; cleanup = () => { previo && previo(); rec && rec.abort(); if (serie) { const c = serie; serie = null; try { c.r && c.r.abort(); } catch (_) {} pantallaActiva(false); } };
 }
 
 // Evento diario en hora local "flotante" (válido sin bloque de zona horaria y respeta la hora del teléfono).
