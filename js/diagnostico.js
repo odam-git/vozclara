@@ -33,7 +33,11 @@ VIEWS.diag = function () {
   // Detalle técnico visible en pantalla: qué eventos entregó el reconocimiento en el intento fallido.
   function mostrarDetalle(r) {
     const c = app.querySelector(".card"); if (!c) return;
-    c.insertAdjacentHTML("beforeend", `<pre class="tecnico">${esc(["DETALLE TÉCNICO (v" + VERSION_APP + (IS_STANDALONE ? ", instalada" : ", navegador") + ")", "Error: " + (r.error || "ninguno"), ...(r.traza && r.traza.length ? r.traza : ["(sin eventos)"])].join("\n"))}</pre>`);
+    c.insertAdjacentHTML("beforeend", `<pre class="tecnico">${esc(["DETALLE TÉCNICO (v" + VERSION_APP + (IS_STANDALONE ? ", instalada" : ", navegador") + ")", "Error: " + (r.error || "ninguno"), ...(r.traza && r.traza.length ? r.traza : ["(sin eventos)"])].join("\n"))}</pre>
+      <button class="btn" id="d-pt">🔧 Hacer la prueba técnica (minuto y medio)</button>
+      <p class="sub">Al tocar el botón, <b>cuenta en voz alta sin parar</b> («uno, dos, tres…») hasta que diga TERMINADO, y manda una captura del resultado.</p>`);
+    // Un solo toque: abre Ajustes y arranca la prueba 3 (debe iniciar dentro del mismo toque).
+    $("#d-pt").onclick = () => { go("ajustes"); const b = $("#pt3"); if (b) { b.scrollIntoView({ block: "center" }); b.click(); } };
   }
   function sinTexto(r, reintentar, seguirSinMedir) {
     const detalle = () => mostrarDetalle(r);

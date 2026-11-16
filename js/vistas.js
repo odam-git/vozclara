@@ -1,5 +1,5 @@
 // ====== UI ======
-const VERSION_APP = "13"; // súbela junto con VERSION en sw.js
+const VERSION_APP = "14"; // súbela junto con VERSION en sw.js
 const $ = s => document.querySelector(s);
 function toast(m) {
   let box = $("#toasts");
