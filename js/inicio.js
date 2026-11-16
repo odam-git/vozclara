@@ -25,7 +25,10 @@ function arrancar() {
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
   if (avisoInicio) setTimeout(() => toast(avisoInicio), 0);
   if (!S.onboarded) { go("bienvenida"); return; }
-  applyFreezes(); greet(); go("hoy");
+  applyFreezes(); greet();
+  // Regreso de una recarga hecha por la prueba técnica 5.
+  let volver = false; try { volver = sessionStorage.getItem("vc.volverAjustes") === "1"; sessionStorage.removeItem("vc.volverAjustes"); } catch (_) {}
+  go(volver ? "ajustes" : "hoy");
   if ("Notification" in window && Notification.permission === "granted" && !S.days[today()]) {
     const [h, m] = S.settings.hour.split(":").map(Number), n = new Date();
     if (n.getHours() * 60 + n.getMinutes() >= h * 60 + m && S.lastNotif !== today()) {
