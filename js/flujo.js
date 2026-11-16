@@ -51,6 +51,8 @@ function medirYEscuchar(cfg) {
               Mientras tanto, toca <b>Escucharme</b> y califícate con estrellas: esa práctica sí cuenta.</div></div>`;
           }
           toast(MENSAJE_SR[r.error] || "No te escuché. Acércate al micrófono e intenta de nuevo.");
+          // Detalle técnico del intento fallido (sirve para pedir ayuda con una captura).
+          const res = q("res"); if (res) res.insertAdjacentHTML("beforeend", `<details class="plegable"><summary>Detalle técnico</summary><pre class="tecnico">${esc(["v" + VERSION_APP + (IS_STANDALONE ? ", instalada" : ", navegador"), "Error: " + (r.error || "ninguno"), ...(r.traza && r.traza.length ? r.traza : ["(sin eventos)"])].join("\n"))}</pre></details>`);
           return;
         }
         vacios = 0; marcarSRok();

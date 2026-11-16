@@ -73,6 +73,7 @@ document.addEventListener("visibilitychange", () => { if (document.hidden && AUD
 window.addEventListener("pagehide", apagarAudio);
 
 let ULTIMA_TRAZA = [];
+const nota2 = (rec, e) => { try { rec.traza && rec.traza.length < 60 && rec.traza.push(((performance.now() - rec.tIni) / 1000).toFixed(1) + "s " + e); } catch (_) {} };
 let SR_VIVO = null; // la única sesión de reconocimiento que puede existir a la vez
 const MENSAJE_SR = {
   "ocupado": "Espera a que termine la grabación.",
@@ -102,7 +103,10 @@ class Reconocedor {
       r.onstart = () => { nota("start"); if (!iniciado) { iniciado = true; resolve(); } };
       r.onresult = e => {
         const ahora = performance.now();
-        if (++nRes <= 3 || e.results[e.results.length - 1].isFinal) nota("result #" + nRes + " (" + e.results.length + (e.results[e.results.length - 1].isFinal ? ", final)" : ", parcial)"));
+        const ult = e.results && e.results.length ? e.results[e.results.length - 1] : null;
+        if (!ult) { nota("result vacío"); return; }
+        this.ultimoFinal = !!ult.isFinal; // ¿el teléfono ya dio por terminada la frase?
+        if (++nRes <= 3 || ult.isFinal) nota("result #" + nRes + " (" + e.results.length + (ult.isFinal ? ", final)" : ", parcial)"));
         if (this.tPrimero == null) this.tPrimero = ahora;
         this.tUltimo = ahora;
         // Se reconstruye todo en cada evento (evita duplicados de Safari).
@@ -169,7 +173,7 @@ class Reconocedor {
   }
   resultado() {
     const habla = this.tPrimero != null && this.tUltimo > this.tPrimero ? (this.tUltimo - this.tPrimero) / 1000 + 0.4 : null;
-    return { text: this.texto(false), segs: this.segs.slice(), secs: (performance.now() - this.tIni) / 1000, hablaSecs: habla, error: this.err };
+    return { traza: (this.traza || []).slice(), text: this.texto(false), segs: this.segs.slice(), secs: (performance.now() - this.tIni) / 1000, hablaSecs: habla, error: this.err };
   }
   stop() {
     return new Promise(res => {
@@ -184,9 +188,17 @@ class Reconocedor {
       };
       // Margen antes de cortar: el reconocimiento del iPhone entrega el texto con uno o dos segundos de
       // retraso. Si se corta en cuanto la persona termina una frase corta, se pierde todo.
-      const ahora = performance.now();
-      const gracia = this.tUltimo == null ? 1800 : Math.max(0, 900 - (ahora - this.tUltimo));
-      if (gracia) setTimeout(parar, gracia); else parar();
+      // Además, se espera a que el teléfono cierre la frase (resultado "final"): cortar a media
+      // transcripción puede dejar al reconocimiento del iPhone sin oír en la siguiente sesión.
+      const t0 = performance.now(), tope = this.tUltimo == null ? 1800 : 3000;
+      const esperar = () => {
+        if (listo) return;
+        const ahora = performance.now(), desde = ahora - (this.tUltimo ?? t0);
+        const lista = this.tUltimo != null && this.ultimoFinal && desde >= 400;
+        if (lista || ahora - t0 >= tope || (this.tUltimo != null && !IS_IOS && desde >= 900)) { nota2(this, "stop"); return parar(); }
+        setTimeout(esperar, 100);
+      };
+      esperar();
     });
   }
   abort() { this.activo = false; this.alCerrar = null; this._cerrar(); this._soltar(); }

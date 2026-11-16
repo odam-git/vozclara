@@ -30,16 +30,22 @@ VIEWS.diag = function () {
 
   // Si el reconocimiento no entiende (o falla), el diagnóstico sigue con autocalificación en vez de atorarse.
   let vacios = 0;
+  // Detalle técnico visible en pantalla: qué eventos entregó el reconocimiento en el intento fallido.
+  function mostrarDetalle(r) {
+    const c = app.querySelector(".card"); if (!c) return;
+    c.insertAdjacentHTML("beforeend", `<pre class="tecnico">${esc(["DETALLE TÉCNICO (v" + VERSION_APP + (IS_STANDALONE ? ", instalada" : ", navegador") + ")", "Error: " + (r.error || "ninguno"), ...(r.traza && r.traza.length ? r.traza : ["(sin eventos)"])].join("\n"))}</pre>`);
+  }
   function sinTexto(r, reintentar, seguirSinMedir) {
+    const detalle = () => mostrarDetalle(r);
     vacios++;
     if (SR_FATAL.includes(r.error)) marcarFallaSR(r.error);
     if (SR_FATAL.includes(r.error) || vacios >= 2) {
       D.modo = "auto";
       toast("El reconocimiento de voz no está entendiendo. Sigo con tu propia calificación para que termines el diagnóstico.");
-      return seguirSinMedir();
+      seguirSinMedir(); return detalle();
     }
     toast("No te escuché. Acércate al micrófono e intenta una vez más.");
-    reintentar();
+    reintentar(); detalle();
   }
 
   // --- 1. Voz normal (solo micrófono)
@@ -191,6 +197,11 @@ VIEWS.diag = function () {
 function autoParo(rec, alParar, espera = 1800) {
   let ultimo = performance.now(), hubo = false; const orig = rec.onText;
   rec.onText = t => { ultimo = performance.now(); hubo = !!t; orig(t); };
-  const iv = setInterval(() => { if (hubo && performance.now() - ultimo > espera) { clearInterval(iv); alParar(); } }, 200);
+  // En iPhone se espera a que el teléfono cierre la frase (resultado final) o, si no llega, más tiempo.
+  const iv = setInterval(() => {
+    const quieto = performance.now() - ultimo;
+    const listo = IS_IOS ? (rec.ultimoFinal ? quieto > 900 : quieto > Math.max(espera, 4500)) : quieto > espera;
+    if (hubo && listo) { clearInterval(iv); alParar(); }
+  }, 200);
   return () => clearInterval(iv);
 }
