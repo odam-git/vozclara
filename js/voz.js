@@ -73,6 +73,7 @@ document.addEventListener("visibilitychange", () => { if (document.hidden && AUD
 window.addEventListener("pagehide", apagarAudio);
 
 let ULTIMA_TRAZA = [];
+let SR_VIVO = null; // la única sesión de reconocimiento que puede existir a la vez
 const MENSAJE_SR = {
   "ocupado": "Espera a que termine la grabación.",
   "no-speech": "No te escuché. Acércate al micrófono e intenta de nuevo.",
@@ -87,7 +88,9 @@ class Reconocedor {
     return new Promise((resolve, reject) => {
       if (AUDIO_ACTIVO.size) return reject("ocupado"); // nunca junto con el micrófono
       AUDIO_ACTIVO.add(this); pantallaActiva(true);
-      const r = new SR();
+      // En iPhone, una sesión anterior mal cerrada deja "sorda" a la siguiente: se elimina antes de empezar.
+      if (SR_VIVO) { const v = SR_VIVO; SR_VIVO = null; try { v.onend = v.onresult = v.onerror = null; v.abort(); } catch (_) {} }
+      const r = new SR(); SR_VIVO = r;
       r.lang = "es-MX"; r.continuous = true; r.interimResults = true; r.maxAlternatives = 1;
       this.rec = r; this.segs = []; this.ses = []; this.interim = ""; this.err = null;
       this.tIni = performance.now(); this.tPrimero = null; this.tUltimo = null;
@@ -109,6 +112,7 @@ class Reconocedor {
           if (x.isFinal) fin.push(x[0].transcript.trim()); else interim += x[0].transcript;
         }
         this.ses = fin; this.interim = interim.trim();
+        const todo = [...fin, this.interim].join(" ").trim(); if (todo) this.respaldo = todo; // último texto no vacío de esta sesión
         this.onText(this.texto(true));
       };
       r.onerror = e => {
@@ -119,13 +123,17 @@ class Reconocedor {
       r.onend = () => {
         nota("end"); this._consolidar();
         const fatal = SR_FATAL.includes(this.err) || this.err === "network";
-        if (this.activo && !fatal && this.reinicios < 30) {
-          this.reinicios++;
+        const solo = this.activo; // el navegador terminó la sesión sin que se le pidiera
+        // Reanudar solo funciona fuera de iPhone: iOS exige un toque para cada sesión y, sin él,
+        // deja una sesión "zombi" que no oye nada y bloquea a las siguientes.
+        if (solo && !fatal && !IS_IOS && this.reinicios < 30) {
+          this.reinicios++; nota("reinicio");
           try { r.start(); return; } catch (_) {}
         }
-        this.activo = false; this._soltar();
+        this.activo = false; this._cerrar(); this._soltar();
         if (!iniciado) { iniciado = true; reject(this.err || "sin-inicio"); }
         if (this._fin) this._fin();
+        else if (solo && this.alCerrar) setTimeout(() => this.alCerrar && this.alCerrar(), 0); // la pantalla da por terminada la medición
       };
       try { r.start(); } catch (e) { iniciado = true; this.activo = false; this._soltar(); reject("sin-inicio"); return; }
       // Algunos navegadores no disparan onstart: si no hubo error en 4 s, se da por iniciado.
@@ -133,9 +141,19 @@ class Reconocedor {
     });
   }
   _soltar() { if (AUDIO_ACTIVO.delete(this)) pantallaActiva(false); }
+  // Cierre definitivo: sin manejadores y abortada, para que no quede nada vivo en el sistema.
+  _cerrar() {
+    const r = this.rec; if (!r || this._cerrado) return; this._cerrado = true;
+    try { r.onstart = r.onresult = r.onerror = r.onend = null; r.abort(); } catch (_) {}
+    if (SR_VIVO === r) SR_VIVO = null;
+  }
   cancelar() { this.abort(); }
   _consolidar() {
-    const nuevos = this.ses.length ? this.ses : (this.interim ? [this.interim] : []);
+    // Algunos navegadores cierran con un resultado final vacío: en ese caso se conserva lo último que sí se oyó.
+    let nuevos = this.ses.filter(Boolean);
+    if (!nuevos.length && this.interim) nuevos = [this.interim];
+    if (!nuevos.length && this.respaldo) nuevos = [this.respaldo];
+    this.respaldo = "";
     for (const s of nuevos) {
       if (!s) continue;
       const prev = this.segs[this.segs.length - 1];
@@ -156,14 +174,22 @@ class Reconocedor {
   stop() {
     return new Promise(res => {
       let listo = false;
-      const fin = () => { if (!listo) { listo = true; this._soltar(); res(this.resultado()); } };
+      const fin = () => { if (!listo) { listo = true; this._cerrar(); this._soltar(); res(this.resultado()); } };
       if (!this.activo) { this._consolidar(); return fin(); }
       this._fin = fin; this.activo = false;
-      try { this.rec.stop(); } catch (_) { this._consolidar(); fin(); }
-      setTimeout(() => { this._consolidar(); fin(); }, 2500); // por si el navegador nunca avisa el final
+      const parar = () => {
+        if (listo) return;
+        try { this.rec.stop(); } catch (_) { this._consolidar(); fin(); }
+        setTimeout(() => { this._consolidar(); fin(); }, 2500); // por si el navegador nunca avisa el final
+      };
+      // Margen antes de cortar: el reconocimiento del iPhone entrega el texto con uno o dos segundos de
+      // retraso. Si se corta en cuanto la persona termina una frase corta, se pierde todo.
+      const ahora = performance.now();
+      const gracia = this.tUltimo == null ? 1800 : Math.max(0, 900 - (ahora - this.tUltimo));
+      if (gracia) setTimeout(parar, gracia); else parar();
     });
   }
-  abort() { this.activo = false; this._soltar(); try { this.rec && this.rec.abort(); } catch (_) {} }
+  abort() { this.activo = false; this.alCerrar = null; this._cerrar(); this._soltar(); }
 }
 
 // Detección de tono (YIN simplificado). Devuelve Hz o null si no hay voz.

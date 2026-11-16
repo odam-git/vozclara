@@ -67,11 +67,11 @@ VIEWS.diag = function () {
     const b = $("#d-b");
     b.onclick = async () => {
       if (D.modo === "medido") {
-        if (rec) { b.disabled = true; const r = await rec.stop(); rec = null; parar && parar(); if (!vivo) return; if (!r.text) return sinTexto(r, paso2, paso2); vacios = 0; return finLectura(r); }
+        if (rec) { b.disabled = true; b.textContent = "Procesando…"; const r = await rec.stop(); rec = null; parar && parar(); if (!vivo) return; if (!r.text) return sinTexto(r, paso2, paso2); vacios = 0; return finLectura(r); }
         rec = new Reconocedor(t => { $("#tr").textContent = t; }); const p = rec.start();
         b.textContent = "⏹️ Terminé"; b.className = "btn rec";
         try { await p; } catch (e) { rec = null; if (SR_FATAL.includes(e)) marcarFallaSR(e); D.modo = "auto"; toast("No se pudo medir con reconocimiento; sigo con el medidor."); return paso2(); }
-        parar = autoParo(rec, () => b.click(), 2600); // en lectura se permiten pausas largas
+        { const actual = rec; rec.alCerrar = () => { if (vivo && rec === actual) b.click(); }; } $("#tr").textContent = "🎙️ Escuchando… lee ahora."; parar = autoParo(rec, () => b.click(), 2600); // en lectura se permiten pausas largas
       } else {
         if (ses) return ses.terminar();
         b.textContent = "⏹️ Terminé"; b.className = "btn rec"; $("#d-m").textContent = "Silencio un instante y lee…";
@@ -92,7 +92,7 @@ VIEWS.diag = function () {
     let i = 0;
     const pinta = () => {
       const tw = lista[i];
-      app.innerHTML = `<div class="card">${diagMarco(2, "Trabalenguas cortos", `<p>${D.modo === "medido" ? "Léelo una vez, claro y a buen ritmo. Se detiene solo cuando terminas." : "Léelo en voz alta una vez y califica qué tan claro te salió."}</p>
+      app.innerHTML = `<div class="card">${diagMarco(2, "Trabalenguas cortos", `<p>${D.modo === "medido" ? "Toca Leer, espera a que diga «Escuchando» y léelo una vez, claro y a buen ritmo. Se detiene solo cuando terminas; no hace falta tocar nada." : "Léelo en voz alta una vez y califica qué tan claro te salió."}</p>
         <p class="diag-cont">${i + 1} de ${lista.length} · <b>${esc(FONEMAS[tw.f].nombre)}</b></p><div class="target" id="tg">${esc(tw.t)}</div>
         <div class="trans" id="tr" aria-live="polite"></div>
         ${D.modo === "medido" ? `<button class="btn" id="d-b">🎯 Leer</button>` : `<p><b>¿Qué tan claro te salió?</b></p><div class="escala5" role="group" aria-label="Claridad del 1 al 5">${[1, 2, 3, 4, 5].map(n => `<button data-n="${n}">${n}</button>`).join("")}</div><div class="escala5-ley"><span>Me trabé</span><span>Perfecto</span></div>`}`)}</div>`;
@@ -100,7 +100,7 @@ VIEWS.diag = function () {
       if (D.modo !== "medido") { document.querySelectorAll(".escala5 button").forEach(x => x.onclick = () => sig(+x.dataset.n, true)); return; }
       const b = $("#d-b");
       b.onclick = async () => {
-        if (rec) { b.disabled = true; const r = await rec.stop(); rec = null; parar && parar(); if (!vivo) return;
+        if (rec) { b.disabled = true; b.textContent = "Procesando…"; const r = await rec.stop(); rec = null; parar && parar(); if (!vivo) return;
           if (!r.text) return sinTexto(r, pinta, pinta);
           vacios = 0;
           const ok = lcsMatch(tw.t, r.text), acc = Math.round(ok.filter(Boolean).length / ok.length * 100);
@@ -108,7 +108,7 @@ VIEWS.diag = function () {
         rec = new Reconocedor(t => { $("#tr").textContent = t; }); const p = rec.start();
         b.textContent = "⏹️ Listo"; b.className = "btn rec";
         try { await p; } catch (e) { rec = null; if (SR_FATAL.includes(e)) marcarFallaSR(e); D.modo = "auto"; toast("Sin reconocimiento: sigo con autocalificación."); return pinta(); }
-        parar = autoParo(rec, () => b.click());
+        { const actual = rec; rec.alCerrar = () => { if (vivo && rec === actual) b.click(); }; } $("#tr").textContent = "🎙️ Escuchando… lee ahora. Se detiene solo."; parar = autoParo(rec, () => b.click());
       };
     };
     pinta();
@@ -124,7 +124,7 @@ VIEWS.diag = function () {
     const acabar = () => { paraCD && paraCD(); b.click(); };
     b.onclick = async () => {
       if (D.modo === "medido") {
-        if (rec) { b.disabled = true; paraCD && paraCD(); const r = await rec.stop(); rec = null; if (!vivo) return;
+        if (rec) { b.disabled = true; b.textContent = "Procesando…"; paraCD && paraCD(); const r = await rec.stop(); rec = null; if (!vivo) return;
           if (!r.text) { // sin texto no hay medición: se pide la calificación propia en vez de inventar un cero
             if (SR_FATAL.includes(r.error)) marcarFallaSR(r.error);
             D.modo = "auto"; b.classList.add("hidden"); toast("No pude entender la improvisación; califícala tú.");
@@ -137,6 +137,8 @@ VIEWS.diag = function () {
         rec = new Reconocedor(t => { $("#tr").textContent = t; }); const p = rec.start();
         b.textContent = "⏹️ Terminar"; b.className = "btn rec";
         try { await p; } catch (e) { rec = null; D.modo = "auto"; return paso4(); }
+        { const actual = rec; rec.alCerrar = () => { if (vivo && rec === actual) b.click(); }; }
+        $("#tr").textContent = "🎙️ Escuchando… habla ahora.";
         paraCD = cuentaRegresiva(45, t => { const c = $("#cd"); if (c) c.textContent = t; }, acabar);
       } else {
         if (b.dataset.fin) return;

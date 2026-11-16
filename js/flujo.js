@@ -25,7 +25,7 @@ function medirYEscuchar(cfg) {
         rec = new Reconocedor(t => { q("tr").textContent = t; });
         const p = rec.start(); // sin await previo: iOS exige el gesto
         bEsc.disabled = true; bMed.textContent = "⏹️ Detener"; bMed.className = "btn rec";
-        q("res").innerHTML = ""; q("aud").innerHTML = ""; q("tr").textContent = "Escuchando…";
+        q("res").innerHTML = ""; q("aud").innerHTML = ""; q("tr").textContent = "Preparando…";
         try { await p; }
         catch (err) {
           rec = null; if (!vivo) return; bEsc.disabled = false;
@@ -33,9 +33,11 @@ function medirYEscuchar(cfg) {
           else { toast(MENSAJE_SR[err] || "No se pudo iniciar la medición. Intenta de nuevo."); pintar(); }
           return;
         }
+        q("tr").textContent = "🎙️ Escuchando… habla ahora.";
+        const actual = rec; rec.alCerrar = () => { if (vivo && rec === actual) bMed.click(); }; // si el teléfono corta solo, se evalúa lo dicho
         cfg.alIniciar && cfg.alIniciar("medir");
       } else {
-        ocupado = true; bMed.disabled = true;
+        ocupado = true; bMed.disabled = true; bMed.textContent = "Procesando…";
         const r = await rec.stop(); rec = null; ocupado = false; if (!vivo) return;
         cfg.alTerminar && cfg.alTerminar("medir");
         bMed.disabled = false; bMed.textContent = "🔁 Medir otra vez"; bMed.className = "btn"; bEsc.disabled = false;

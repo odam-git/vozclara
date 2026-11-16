@@ -4,7 +4,7 @@ const vm = require("node:vm"), fs = require("node:fs"), path = require("node:pat
 const RAIZ = path.join(__dirname, "..");
 const ORDEN = ["datos", "estado", "voz", "analisis", "flujo", "progreso", "adaptativo", "vistas", "modulos", "juridico", "diagnostico", "reporte"];
 
-function cargar({ guardado = null, ahora = "2026-03-10T12:00:00" } = {}) {
+function cargar({ guardado = null, ahora = "2026-03-10T12:00:00", antes = "" } = {}) {
   const almacen = new Map();
   if (guardado) almacen.set("vozclara.v1", typeof guardado === "string" ? guardado : JSON.stringify(guardado));
   const nada = () => {};
@@ -14,7 +14,7 @@ function cargar({ guardado = null, ahora = "2026-03-10T12:00:00" } = {}) {
     localStorage: { getItem: k => (almacen.has(k) ? almacen.get(k) : null), setItem: (k, v) => almacen.set(k, String(v)), removeItem: k => almacen.delete(k) },
     navigator: { userAgent: "node", platform: "node", maxTouchPoints: 0 },
     document: { addEventListener: nada, querySelector: () => elemento(), querySelectorAll: () => [], createElement: () => elemento(), body: elemento(), documentElement: elemento(), hidden: false },
-    performance: { now: () => Date.now() }, requestAnimationFrame: nada, cancelAnimationFrame: nada, devicePixelRatio: 1,
+    performance: { now: () => Number(process.hrtime.bigint() / 1000000n) }, requestAnimationFrame: nada, cancelAnimationFrame: nada, devicePixelRatio: 1,
     avisos: []
   });
   ctx.window = ctx; ctx.addEventListener = nada; ctx.matchMedia = () => ({ matches: false });
@@ -22,6 +22,7 @@ function cargar({ guardado = null, ahora = "2026-03-10T12:00:00" } = {}) {
   vm.runInContext(`const __Real = Date; let __ahora = new __Real(${JSON.stringify(ahora)}).getTime();
     Date = class extends __Real { constructor(...a) { if (a.length) super(...a); else super(__ahora); } static now() { return __ahora; } };
     function fijarAhora(iso) { __ahora = new __Real(iso).getTime(); }`, ctx);
+  if (antes) vm.runInContext(antes, ctx); // p. ej. un reconocimiento de voz simulado
   for (const n of ORDEN) vm.runInContext(fs.readFileSync(path.join(RAIZ, "js", n + ".js"), "utf8"), ctx, { filename: n + ".js" });
   // Contenido real y avisos capturados en vez de mostrarse.
   const dato = f => fs.readFileSync(path.join(RAIZ, "data", f), "utf8");

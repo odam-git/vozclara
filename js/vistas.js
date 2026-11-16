@@ -1,4 +1,5 @@
 // ====== UI ======
+const VERSION_APP = "9"; // súbela junto con VERSION en sw.js
 const $ = s => document.querySelector(s);
 function toast(m) {
   let box = $("#toasts");
@@ -247,7 +248,8 @@ const VIEWS = {
     <p><b>Tu historial y tus grabaciones se quedan en este dispositivo.</b> No hay servidor de Voz Clara ni cuentas.</p>
     <p><b>Ojo:</b> cuando tocas <b>Medir</b>, el reconocimiento de voz lo hace el propio navegador, que envía el audio a servidores de <b>Google</b> (Chrome) o de <b>Apple</b> (Safari) para convertirlo en texto. <b>Escucharme</b> y los medidores no envían nada: el audio solo se procesa en tu teléfono.</p>
     <button class="btn sec" id="ex">Exportar respaldo</button><button class="btn sec" id="im">Importar respaldo</button><input type="file" id="fi" class="hidden" accept=".json,application/json">
-    <div id="imp"></div></div>`;
+    <div id="imp"></div></div>
+    <p class="sub" style="text-align:center">Voz Clara · versión ${VERSION_APP}</p>`;
     $("#sv").onclick = () => { S.settings.name = $("#nm").value.trim().slice(0, 40); S.settings.focus = $("#fc").value; S.settings.hour = $("#hr").value || "07:30"; save(); greet(); toast("Guardado"); };
     $("#ics").onclick = () => {
       const [h, m] = ($("#hr").value || "07:30").split(":");

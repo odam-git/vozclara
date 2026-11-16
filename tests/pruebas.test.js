@@ -243,3 +243,60 @@ test("práctica jurídica: los asuntos importados se limpian y nunca llegan como
   assert.ok(!a.ev(`rellenar("Imputado: {imputado}", c)`).includes("<img"), "el texto del asunto se escapa al mostrarse");
   assert.equal(a.ev(`Array(30).fill(0).map((_, i) => ({ id: "C" + i, materia: "civil", titulo: "t" + i })).length && normalizar({ sessions: [], casos: Array(30).fill(0).map((_, i) => ({ id: "C" + i, materia: "civil", titulo: "t" + i })) }).casos.length`), 20);
 });
+
+// Reconocimiento simulado al estilo de Safari en iPhone: entrega el texto con retraso y,
+// al detenerlo, termina sin entregar lo pendiente.
+const SR_LENTO = `SpeechRecognition = class {
+  start() { setTimeout(() => this.onstart && this.onstart(), 10);
+    this.t = setTimeout(() => this.onresult && this.onresult({ results: [Object.assign([{ transcript: globalThis.__dice }], { isFinal: false })] }), globalThis.__retraso); }
+  stop() { clearTimeout(this.t); if (globalThis.__finalVacio && this.onresult) this.onresult({ results: [Object.assign([{ transcript: "" }], { isFinal: true })] }); setTimeout(() => this.onend && this.onend(), 30); }
+  abort() { clearTimeout(this.t); this.onend && this.onend(); }
+}; __dice = "ramón rema rápido en el río"; __retraso = 1200; __finalVacio = false;`;
+
+test("reconocimiento: una frase corta no se pierde si el texto llega después de pedir el alto", async () => {
+  const a = cargar({ antes: SR_LENTO });
+  const r = await a.ev(`(async () => { const rec = new Reconocedor(); await rec.start(); await new Promise(r => setTimeout(r, 300)); return rec.stop(); })()`);
+  assert.equal(r.text, "ramón rema rápido en el río");
+  assert.equal(a.ev("AUDIO_ACTIVO.size"), 0);
+});
+
+test("reconocimiento: si el navegador cierra con un resultado vacío se conserva lo ya escuchado", async () => {
+  const a = cargar({ antes: SR_LENTO });
+  a.ev("__retraso = 100; __finalVacio = true");
+  const r = await a.ev(`(async () => { const rec = new Reconocedor(); await rec.start(); await new Promise(r => setTimeout(r, 400)); return rec.stop(); })()`);
+  assert.equal(r.text, "ramón rema rápido en el río");
+});
+
+test("reconocimiento: si de verdad no se oyó nada, el resultado queda vacío (sin inventar texto)", async () => {
+  const a = cargar({ antes: SR_LENTO });
+  a.ev("__retraso = 60000");
+  const r = await a.ev(`(async () => { const rec = new Reconocedor(); await rec.start(); const x = await rec.stop(); return x; })()`);
+  assert.equal(r.text, "");
+});
+
+test("reconocimiento en iPhone: no se reanuda solo, avisa a la pantalla y cierra del todo la sesión anterior", async () => {
+  const a = cargar({ antes: `navigator.userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)"; __inicios = 0; __abortos = 0;
+    SpeechRecognition = class { start() { __inicios++; setTimeout(() => this.onstart && this.onstart(), 5);
+        setTimeout(() => this.onresult && this.onresult({ results: [Object.assign([{ transcript: "hola" }], { isFinal: true })] }), 40);
+        setTimeout(() => this.onend && this.onend(), 80); } // el teléfono termina la sesión por su cuenta
+      stop() { setTimeout(() => this.onend && this.onend(), 10); } abort() { __abortos++; } };` });
+  assert.equal(a.ev("IS_IOS"), true);
+  const r = await a.ev(`(async () => { const rec = new Reconocedor(); let avisos = 0; rec.alCerrar = () => avisos++; await rec.start();
+    await new Promise(r => setTimeout(r, 200)); const x = await rec.stop(); return { text: x.text, avisos }; })()`);
+  assert.equal(r.text, "hola");
+  assert.equal(r.avisos, 1, "la pantalla recibe el aviso de que la sesión terminó sola");
+  assert.equal(a.ev("__inicios"), 1, "no hubo reinicio automático");
+  assert.ok(a.ev("__abortos") >= 1, "la sesión se cerró por completo");
+  assert.equal(a.ev("SR_VIVO"), null);
+  assert.equal(a.ev("AUDIO_ACTIVO.size"), 0);
+  // Una segunda sesión arranca limpia.
+  const r2 = await a.ev(`(async () => { const rec = new Reconocedor(); await rec.start(); await new Promise(r => setTimeout(r, 120)); return (await rec.stop()).text; })()`);
+  assert.equal(r2, "hola");
+});
+
+test("reconocimiento fuera de iPhone: sí se reanuda si el navegador corta por silencio", async () => {
+  const a = cargar({ antes: `__inicios = 0; SpeechRecognition = class { start() { __inicios++; setTimeout(() => this.onstart && this.onstart(), 5); if (__inicios === 1) setTimeout(() => this.onend && this.onend(), 40); }
+      stop() { setTimeout(() => this.onend && this.onend(), 10); } abort() {} };` });
+  await a.ev(`(async () => { const rec = new Reconocedor(); await rec.start(); await new Promise(r => setTimeout(r, 150)); await rec.stop(); })()`);
+  assert.equal(a.ev("__inicios"), 2);
+});
