@@ -70,14 +70,14 @@ VIEWS.diag = function () {
     const L = LECTURAS.find(l => l.id === "L27") || LECTURAS[0], txt = textoLimpio(L.texto), N = palabras(txt).length;
     app.innerHTML = `<div class="card">${diagMarco(1, "Lee en voz alta", `<p>Como si lo presentaras ante un auditorio, con tu ritmo natural.</p>
       <div class="target">${esc(txt)}</div><div class="trans" id="tr" aria-live="polite"></div><button class="btn" id="d-b">${D.modo === "medido" ? "🎯 Empezar a leer" : "🎙️ Empezar a leer"}</button><p class="sub" id="d-m"></p>`)}</div>`;
-    const b = $("#d-b");
+    const b = $("#d-b"); if (D.modo === "medido") cuandoSRListo(b);
     b.onclick = async () => {
       if (D.modo === "medido") {
         if (rec) { b.disabled = true; b.textContent = "Procesando…"; const r = await rec.stop(); rec = null; parar && parar(); if (!vivo) return; if (!r.text) return sinTexto(r, paso2, paso2); vacios = 0; return finLectura(r); }
         rec = new Reconocedor(t => { $("#tr").textContent = t; }); const p = rec.start();
         b.textContent = "⏹️ Terminé"; b.className = "btn rec";
         try { await p; } catch (e) { rec = null; if (SR_FATAL.includes(e)) marcarFallaSR(e); D.modo = "auto"; toast("No se pudo medir con reconocimiento; sigo con el medidor."); return paso2(); }
-        { const actual = rec; rec.alCerrar = () => { if (vivo && rec === actual) b.click(); }; } $("#tr").textContent = "🎙️ Escuchando… lee ahora."; parar = autoParo(rec, () => b.click(), 2600); // en lectura se permiten pausas largas
+        { const actual = rec; rec.alCerrar = () => { if (vivo && rec === actual) b.click(); }; rec.alSordo = () => { const t = $("#tr"); if (t && vivo && rec === actual) t.textContent = "⚠️ Aún no detecto tu voz. Si ya hablaste, toca el botón rojo y vuelve a intentar."; }; } $("#tr").textContent = "🎙️ Escuchando… lee ahora."; parar = autoParo(rec, () => b.click(), 2600); // en lectura se permiten pausas largas
       } else {
         if (ses) return ses.terminar();
         b.textContent = "⏹️ Terminé"; b.className = "btn rec"; $("#d-m").textContent = "Silencio un instante y lee…";
@@ -104,7 +104,7 @@ VIEWS.diag = function () {
         ${D.modo === "medido" ? `<button class="btn" id="d-b">🎯 Leer</button>` : `<p><b>¿Qué tan claro te salió?</b></p><div class="escala5" role="group" aria-label="Claridad del 1 al 5">${[1, 2, 3, 4, 5].map(n => `<button data-n="${n}">${n}</button>`).join("")}</div><div class="escala5-ley"><span>Me trabé</span><span>Perfecto</span></div>`}`)}</div>`;
       const sig = (v, propia) => { (propia ? D.fonSelf : D.fon)[tw.f] = v; i++; if (i < lista.length) pinta(); else paso4(); };
       if (D.modo !== "medido") { document.querySelectorAll(".escala5 button").forEach(x => x.onclick = () => sig(+x.dataset.n, true)); return; }
-      const b = $("#d-b");
+      const b = $("#d-b"); cuandoSRListo(b);
       b.onclick = async () => {
         if (rec) { b.disabled = true; b.textContent = "Procesando…"; const r = await rec.stop(); rec = null; parar && parar(); if (!vivo) return;
           if (!r.text) return sinTexto(r, pinta, pinta);
@@ -114,7 +114,7 @@ VIEWS.diag = function () {
         rec = new Reconocedor(t => { $("#tr").textContent = t; }); const p = rec.start();
         b.textContent = "⏹️ Listo"; b.className = "btn rec";
         try { await p; } catch (e) { rec = null; if (SR_FATAL.includes(e)) marcarFallaSR(e); D.modo = "auto"; toast("Sin reconocimiento: sigo con autocalificación."); return pinta(); }
-        { const actual = rec; rec.alCerrar = () => { if (vivo && rec === actual) b.click(); }; } $("#tr").textContent = "🎙️ Escuchando… lee ahora. Se detiene solo."; parar = autoParo(rec, () => b.click());
+        { const actual = rec; rec.alCerrar = () => { if (vivo && rec === actual) b.click(); }; rec.alSordo = () => { const t = $("#tr"); if (t && vivo && rec === actual) t.textContent = "⚠️ Aún no detecto tu voz. Si ya hablaste, toca el botón rojo y vuelve a intentar."; }; } $("#tr").textContent = "🎙️ Escuchando… lee ahora. Se detiene solo."; parar = autoParo(rec, () => b.click());
       };
     };
     pinta();
@@ -126,7 +126,7 @@ VIEWS.diag = function () {
     app.innerHTML = `<div class="card">${diagMarco(3, "Improvisación", `<p>Habla 45 segundos del tema. No hay respuestas correctas: solo quiero escuchar tu fluidez.</p>
       <div class="target">${esc(tema)}</div><div class="timer" id="cd">45</div><div class="trans" id="tr" aria-live="polite"></div>
       <button class="btn" id="d-b">${D.modo === "medido" ? "🎯 Empezar" : "🎙️ Empezar"}</button><div id="d-x"></div>`)}</div>`;
-    const b = $("#d-b"); let paraCD = null;
+    const b = $("#d-b"); let paraCD = null; if (D.modo === "medido") cuandoSRListo(b);
     const acabar = () => { paraCD && paraCD(); b.click(); };
     b.onclick = async () => {
       if (D.modo === "medido") {
@@ -143,7 +143,7 @@ VIEWS.diag = function () {
         rec = new Reconocedor(t => { $("#tr").textContent = t; }); const p = rec.start();
         b.textContent = "⏹️ Terminar"; b.className = "btn rec";
         try { await p; } catch (e) { rec = null; D.modo = "auto"; return paso4(); }
-        { const actual = rec; rec.alCerrar = () => { if (vivo && rec === actual) b.click(); }; }
+        { const actual = rec; rec.alCerrar = () => { if (vivo && rec === actual) b.click(); }; rec.alSordo = () => { const t = $("#tr"); if (t && vivo && rec === actual) t.textContent = "⚠️ Aún no detecto tu voz. Si ya hablaste, toca el botón rojo y vuelve a intentar."; }; }
         $("#tr").textContent = "🎙️ Escuchando… habla ahora.";
         paraCD = cuentaRegresiva(45, t => { const c = $("#cd"); if (c) c.textContent = t; }, acabar);
       } else {

@@ -17,6 +17,7 @@ function medirYEscuchar(cfg) {
       <div data-id="aud"></div>`;
     const q = id => el.querySelector(`[data-id="${id}"]`);
     const bMed = q("medir"), bEsc = q("esc"), bRe = q("re");
+    cuandoSRListo(bMed);
     if (bRe) bRe.onclick = () => { reintentarSR(); pintar(); toast("Listo, toca Medir para intentarlo."); };
 
     if (bMed) bMed.onclick = async () => {
@@ -34,6 +35,7 @@ function medirYEscuchar(cfg) {
           return;
         }
         q("tr").textContent = "🎙️ Escuchando… habla ahora.";
+        rec.alSordo = () => { const t = q("tr"); if (t && vivo) t.textContent = "⚠️ Aún no detecto tu voz. Si ya hablaste, toca Detener y vuelve a intentar."; };
         const actual = rec; rec.alCerrar = () => { if (vivo && rec === actual) bMed.click(); }; // si el teléfono corta solo, se evalúa lo dicho
         cfg.alIniciar && cfg.alIniciar("medir");
       } else {
@@ -41,6 +43,7 @@ function medirYEscuchar(cfg) {
         const r = await rec.stop(); rec = null; ocupado = false; if (!vivo) return;
         cfg.alTerminar && cfg.alTerminar("medir");
         bMed.disabled = false; bMed.textContent = "🔁 Medir otra vez"; bMed.className = "btn"; bEsc.disabled = false;
+        cuandoSRListo(bMed);
         if (!r.text) {
           q("tr").textContent = ""; vacios++;
           if (SR_FATAL.includes(r.error)) { marcarFallaSR(r.error); pintar(); }

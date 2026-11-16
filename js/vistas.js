@@ -1,5 +1,5 @@
 // ====== UI ======
-const VERSION_APP = "11"; // súbela junto con VERSION en sw.js
+const VERSION_APP = "12"; // súbela junto con VERSION en sw.js
 const $ = s => document.querySelector(s);
 function toast(m) {
   let box = $("#toasts");
@@ -298,7 +298,7 @@ function pruebaTecnica() {
     if (!fallo) await new Promise(r => setTimeout(r, 6000));
     const r = fallo ? { text: "", error: fallo } : await rec.stop(); const traza = rec.traza || []; rec = null;
     if (!$("#pt-out")) return;
-    b.disabled = false;
+    b.disabled = false; cuandoSRListo($("#pt1")); cuandoSRListo($("#pt2"));
     out.textContent = [titulo, entorno(), "", "Texto reconocido: " + (r.text ? "«" + r.text + "»" : "(nada)"), "Error: " + (r.error || fallo || "ninguno"), "Eventos:", ...(traza.length ? traza : ["(ninguno)"])].join("\n");
   };
   $("#pt1").onclick = () => probar("PRUEBA 1 · solo reconocimiento", $("#pt1"));

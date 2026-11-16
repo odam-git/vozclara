@@ -74,7 +74,18 @@ window.addEventListener("pagehide", apagarAudio);
 
 let ULTIMA_TRAZA = [];
 const nota2 = (rec, e) => { try { rec.traza && rec.traza.length < 60 && rec.traza.push(((performance.now() - rec.tIni) / 1000).toFixed(1) + "s " + e); } catch (_) {} };
-let SR_VIVO = null; // la única sesión de reconocimiento que puede existir a la vez
+let SR_VIVO = null;
+// Descanso entre sesiones: en iPhone, una escucha que empieza enseguida de otra abre el micrófono
+// pero no recibe sonido. Se mide desde que la sesión anterior quedó cerrada.
+let SR_FIN = -1e9;
+const SR_PAUSA = IS_IOS ? 4000 : 400;
+const srFaltan = () => Math.max(0, Math.ceil(SR_PAUSA - (performance.now() - SR_FIN)));
+// Deja el botón en espera hasta que el reconocimiento pueda usarse otra vez.
+function cuandoSRListo(boton) {
+  const ms = srFaltan(); if (!boton || !ms) return;
+  const texto = boton.textContent; boton.disabled = true; boton.textContent = "Preparando el micrófono…";
+  setTimeout(() => { if (boton.isConnected && boton.textContent === "Preparando el micrófono…") { boton.disabled = false; boton.textContent = texto; } }, ms);
+} // la única sesión de reconocimiento que puede existir a la vez
 const MENSAJE_SR = {
   "ocupado": "Espera a que termine la grabación.",
   "no-speech": "No te escuché. Acércate al micrófono e intenta de nuevo.",
@@ -99,7 +110,11 @@ class Reconocedor {
       // Bitácora técnica de la sesión (para la prueba de voz en Ajustes).
       const t0 = performance.now(), traza = this.traza = []; ULTIMA_TRAZA = traza; let nRes = 0;
       const nota = e => traza.length < 60 && traza.push(((performance.now() - t0) / 1000).toFixed(1) + "s " + e);
-      for (const ev of ["audiostart", "soundstart", "speechstart", "speechend", "soundend", "audioend", "nomatch"]) r["on" + ev] = () => nota(ev);
+      let oyo = false;
+      for (const ev of ["audiostart", "soundstart", "speechstart", "speechend", "soundend", "audioend", "nomatch"]) r["on" + ev] = () => { nota(ev); if (ev === "soundstart" || ev === "speechstart") oyo = true; };
+      if (srFaltan()) nota("inicio sin descanso (" + srFaltan() + " ms)");
+      // Si a los 4 s no ha llegado sonido ni texto, se avisa a la pantalla (micrófono abierto pero mudo).
+      setTimeout(() => { if (this.activo && !oyo && this.tPrimero == null) { nota("sin sonido a los 4 s"); this.alSordo && this.alSordo(); } }, 4000);
       r.onstart = () => { nota("start"); if (!iniciado) { iniciado = true; resolve(); } };
       r.onresult = e => {
         const ahora = performance.now();
@@ -150,6 +165,7 @@ class Reconocedor {
     const r = this.rec; if (!r || this._cerrado) return; this._cerrado = true;
     try { r.onstart = r.onresult = r.onerror = r.onend = null; r.abort(); } catch (_) {}
     if (SR_VIVO === r) SR_VIVO = null;
+    SR_FIN = performance.now();
   }
   cancelar() { this.abort(); }
   _consolidar() {
