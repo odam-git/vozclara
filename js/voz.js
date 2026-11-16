@@ -72,6 +72,7 @@ async function pantallaActiva(on, forzar) {
 document.addEventListener("visibilitychange", () => { if (document.hidden && AUDIO_ACTIVO.size) { apagarAudio(); if (typeof alVolver === "function") alVolver(true); } });
 window.addEventListener("pagehide", apagarAudio);
 
+let ULTIMA_TRAZA = [];
 const MENSAJE_SR = {
   "ocupado": "Espera a que termine la grabación.",
   "no-speech": "No te escuché. Acércate al micrófono e intenta de nuevo.",
@@ -91,9 +92,14 @@ class Reconocedor {
       this.rec = r; this.segs = []; this.ses = []; this.interim = ""; this.err = null;
       this.tIni = performance.now(); this.tPrimero = null; this.tUltimo = null;
       this.activo = true; this.reinicios = 0; let iniciado = false;
-      r.onstart = () => { if (!iniciado) { iniciado = true; resolve(); } };
+      // Bitácora técnica de la sesión (para la prueba de voz en Ajustes).
+      const t0 = performance.now(), traza = this.traza = []; ULTIMA_TRAZA = traza; let nRes = 0;
+      const nota = e => traza.length < 60 && traza.push(((performance.now() - t0) / 1000).toFixed(1) + "s " + e);
+      for (const ev of ["audiostart", "soundstart", "speechstart", "speechend", "soundend", "audioend", "nomatch"]) r["on" + ev] = () => nota(ev);
+      r.onstart = () => { nota("start"); if (!iniciado) { iniciado = true; resolve(); } };
       r.onresult = e => {
         const ahora = performance.now();
+        if (++nRes <= 3 || e.results[e.results.length - 1].isFinal) nota("result #" + nRes + " (" + e.results.length + (e.results[e.results.length - 1].isFinal ? ", final)" : ", parcial)"));
         if (this.tPrimero == null) this.tPrimero = ahora;
         this.tUltimo = ahora;
         // Se reconstruye todo en cada evento (evita duplicados de Safari).
@@ -106,11 +112,12 @@ class Reconocedor {
         this.onText(this.texto(true));
       };
       r.onerror = e => {
+        nota("error: " + e.error);
         this.err = e.error;
         if (!iniciado && SR_FATAL.includes(e.error)) { iniciado = true; reject(e.error); }
       };
       r.onend = () => {
-        this._consolidar();
+        nota("end"); this._consolidar();
         const fatal = SR_FATAL.includes(this.err) || this.err === "network";
         if (this.activo && !fatal && this.reinicios < 30) {
           this.reinicios++;

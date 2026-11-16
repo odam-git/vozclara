@@ -1,7 +1,9 @@
-// ====== Diagnóstico inicial (~3 min): voz normal, lectura, trabalenguas e improvisación ======
+// ====== Diagnóstico inicial (~3 min): lectura, trabalenguas, improvisación y voz normal ======
+// Las pruebas con reconocimiento van primero y la del micrófono al final: en iPhone, usar el
+// micrófono justo antes puede dejar sordo al reconocimiento.
 // Fija la línea base y elige automáticamente los sonidos a trabajar.
 
-const DIAG_PASOS = ["Tu voz", "Lectura", "Trabalenguas", "Improvisación"];
+const DIAG_PASOS = ["Lectura", "Trabalenguas", "Improvisación", "Tu voz"];
 
 function diagMarco(paso, titulo, cuerpo) {
   return `<section class="diag" aria-labelledby="dg-t">
@@ -21,24 +23,38 @@ VIEWS.diag = function () {
   // --- 0. Introducción
   app.innerHTML = `<div class="card">${diagMarco(0, "Encontremos tu punto de partida", `
     <p class="diag-lead">Cuatro pruebas cortas para medir cómo hablas hoy. Con eso fijo tu <b>línea base</b> y elijo los sonidos que más te conviene entrenar.</p>
-    <ol class="diag-lista"><li><b>Tu voz normal</b> · 10 s</li><li><b>Lectura en voz alta</b> · 30 s</li><li><b>Trabalenguas cortos</b> · 90 s</li><li><b>Improvisación</b> · 45 s</li></ol>
+    <ol class="diag-lista"><li><b>Lectura en voz alta</b> · 30 s</li><li><b>Trabalenguas cortos</b> · 90 s</li><li><b>Improvisación</b> · 45 s</li><li><b>Tu voz normal</b> · 10 s</li></ol>
     <p class="sub">Busca un lugar tranquilo y deja el teléfono a unos 50 cm.${D.modo === "auto" ? " Aquí no hay medición automática: en las pruebas de dicción te pediré calificarte." : ""}</p>
     <button class="btn" id="d-go">Empezar diagnóstico</button>`)}</div>`;
-  $("#d-go").onclick = paso1;
+  $("#d-go").onclick = paso2;
+
+  // Si el reconocimiento no entiende (o falla), el diagnóstico sigue con autocalificación en vez de atorarse.
+  let vacios = 0;
+  function sinTexto(r, reintentar, seguirSinMedir) {
+    vacios++;
+    if (SR_FATAL.includes(r.error)) marcarFallaSR(r.error);
+    if (SR_FATAL.includes(r.error) || vacios >= 2) {
+      D.modo = "auto";
+      toast("El reconocimiento de voz no está entendiendo. Sigo con tu propia calificación para que termines el diagnóstico.");
+      return seguirSinMedir();
+    }
+    toast("No te escuché. Acércate al micrófono e intenta una vez más.");
+    reintentar();
+  }
 
   // --- 1. Voz normal (solo micrófono)
   function paso1() {
-    app.innerHTML = `<div class="card">${diagMarco(1, "Tu voz normal", `<div id="cal">${calibrarHTML()}</div><button class="btn" id="d-b">Grabar mi voz normal</button>`)}</div>`;
+    app.innerHTML = `<div class="card">${diagMarco(4, "Tu voz normal", `<div id="cal">${calibrarHTML()}</div><button class="btn" id="d-b">Grabar mi voz normal</button>`)}</div>`;
     $("#d-b").onclick = async () => {
       $("#d-b").disabled = true;
       ses = await correrCalibracion($("#cal"), ref => {
         ses = null; if (!vivo) return;
         if (!ref) {
           $("#d-b").disabled = false; $("#d-b").textContent = "Intentar de nuevo";
-          if (!$("#d-sk")) { $("#d-b").insertAdjacentHTML("afterend", '<button class="btn sec" id="d-sk">Omitir esta prueba</button>'); $("#d-sk").onclick = paso2; }
+          if (!$("#d-sk")) { $("#d-b").insertAdjacentHTML("afterend", '<button class="btn sec" id="d-sk">Omitir esta prueba</button>'); $("#d-sk").onclick = resultado; }
           return;
         }
-        D.db = ref.db; D.f0 = ref.f0; setTimeout(() => vivo && paso2(), 900);
+        D.db = ref.db; D.f0 = ref.f0; setTimeout(() => vivo && resultado(), 900);
       });
     };
   }
@@ -46,12 +62,12 @@ VIEWS.diag = function () {
   // --- 2. Lectura (reconocimiento o, sin él, medidor para el ritmo)
   function paso2() {
     const L = LECTURAS.find(l => l.id === "L27") || LECTURAS[0], txt = textoLimpio(L.texto), N = palabras(txt).length;
-    app.innerHTML = `<div class="card">${diagMarco(2, "Lee en voz alta", `<p>Como si lo presentaras ante un auditorio, con tu ritmo natural.</p>
+    app.innerHTML = `<div class="card">${diagMarco(1, "Lee en voz alta", `<p>Como si lo presentaras ante un auditorio, con tu ritmo natural.</p>
       <div class="target">${esc(txt)}</div><div class="trans" id="tr" aria-live="polite"></div><button class="btn" id="d-b">${D.modo === "medido" ? "🎯 Empezar a leer" : "🎙️ Empezar a leer"}</button><p class="sub" id="d-m"></p>`)}</div>`;
     const b = $("#d-b");
     b.onclick = async () => {
       if (D.modo === "medido") {
-        if (rec) { b.disabled = true; const r = await rec.stop(); rec = null; parar && parar(); if (!vivo) return; return finLectura(r.text ? r : null); }
+        if (rec) { b.disabled = true; const r = await rec.stop(); rec = null; parar && parar(); if (!vivo) return; if (!r.text) return sinTexto(r, paso2, paso2); vacios = 0; return finLectura(r); }
         rec = new Reconocedor(t => { $("#tr").textContent = t; }); const p = rec.start();
         b.textContent = "⏹️ Terminé"; b.className = "btn rec";
         try { await p; } catch (e) { rec = null; if (SR_FATAL.includes(e)) marcarFallaSR(e); D.modo = "auto"; toast("No se pudo medir con reconocimiento; sigo con el medidor."); return paso2(); }
@@ -76,7 +92,7 @@ VIEWS.diag = function () {
     let i = 0;
     const pinta = () => {
       const tw = lista[i];
-      app.innerHTML = `<div class="card">${diagMarco(3, "Trabalenguas cortos", `<p>${D.modo === "medido" ? "Léelo una vez, claro y a buen ritmo. Se detiene solo cuando terminas." : "Léelo en voz alta una vez y califica qué tan claro te salió."}</p>
+      app.innerHTML = `<div class="card">${diagMarco(2, "Trabalenguas cortos", `<p>${D.modo === "medido" ? "Léelo una vez, claro y a buen ritmo. Se detiene solo cuando terminas." : "Léelo en voz alta una vez y califica qué tan claro te salió."}</p>
         <p class="diag-cont">${i + 1} de ${lista.length} · <b>${esc(FONEMAS[tw.f].nombre)}</b></p><div class="target" id="tg">${esc(tw.t)}</div>
         <div class="trans" id="tr" aria-live="polite"></div>
         ${D.modo === "medido" ? `<button class="btn" id="d-b">🎯 Leer</button>` : `<p><b>¿Qué tan claro te salió?</b></p><div class="escala5" role="group" aria-label="Claridad del 1 al 5">${[1, 2, 3, 4, 5].map(n => `<button data-n="${n}">${n}</button>`).join("")}</div><div class="escala5-ley"><span>Me trabé</span><span>Perfecto</span></div>`}`)}</div>`;
@@ -85,7 +101,8 @@ VIEWS.diag = function () {
       const b = $("#d-b");
       b.onclick = async () => {
         if (rec) { b.disabled = true; const r = await rec.stop(); rec = null; parar && parar(); if (!vivo) return;
-          if (!r.text) { toast("No te escuché. Intenta de nuevo."); return pinta(); }
+          if (!r.text) return sinTexto(r, pinta, pinta);
+          vacios = 0;
           const ok = lcsMatch(tw.t, r.text), acc = Math.round(ok.filter(Boolean).length / ok.length * 100);
           $("#tg").innerHTML = `${acc}% <span class="sub">de precisión</span>`; setTimeout(() => vivo && sig(acc), 700); return; }
         rec = new Reconocedor(t => { $("#tr").textContent = t; }); const p = rec.start();
@@ -100,7 +117,7 @@ VIEWS.diag = function () {
   // --- 4. Improvisación 45 s
   function paso4() {
     const tema = (TEMAS.find(t => t.nivel === 1) || TEMAS[0]).t;
-    app.innerHTML = `<div class="card">${diagMarco(4, "Improvisación", `<p>Habla 45 segundos del tema. No hay respuestas correctas: solo quiero escuchar tu fluidez.</p>
+    app.innerHTML = `<div class="card">${diagMarco(3, "Improvisación", `<p>Habla 45 segundos del tema. No hay respuestas correctas: solo quiero escuchar tu fluidez.</p>
       <div class="target">${esc(tema)}</div><div class="timer" id="cd">45</div><div class="trans" id="tr" aria-live="polite"></div>
       <button class="btn" id="d-b">${D.modo === "medido" ? "🎯 Empezar" : "🎙️ Empezar"}</button><div id="d-x"></div>`)}</div>`;
     const b = $("#d-b"); let paraCD = null;
@@ -108,8 +125,15 @@ VIEWS.diag = function () {
     b.onclick = async () => {
       if (D.modo === "medido") {
         if (rec) { b.disabled = true; paraCD && paraCD(); const r = await rec.stop(); rec = null; if (!vivo) return;
+          if (!r.text) { // sin texto no hay medición: se pide la calificación propia en vez de inventar un cero
+            if (SR_FATAL.includes(r.error)) marcarFallaSR(r.error);
+            D.modo = "auto"; b.classList.add("hidden"); toast("No pude entender la improvisación; califícala tú.");
+            $("#d-x").innerHTML = `<p><b>¿Qué tan fluido te sentiste?</b></p><div class="escala5">${[1, 2, 3, 4, 5].map(n => `<button data-n="${n}">${n}</button>`).join("")}</div><div class="escala5-ley"><span>Con muchas muletillas</span><span>Muy fluido</span></div>`;
+            document.querySelectorAll("#d-x .escala5 button").forEach(x => x.onclick = () => { D.fluidez = +x.dataset.n; paso1(); });
+            return;
+          }
           const dur = r.hablaSecs || r.secs, w = palabras(r.text).length, m = countMuletillas(r.segs);
-          D.mulMin = dur >= 10 ? +(m.c / (dur / 60)).toFixed(1) : null; D.imWpm = dur >= 10 ? Math.round(w / (dur / 60)) : null; return resultado(); }
+          D.mulMin = dur >= 10 ? +(m.c / (dur / 60)).toFixed(1) : null; D.imWpm = dur >= 10 ? Math.round(w / (dur / 60)) : null; return paso1(); }
         rec = new Reconocedor(t => { $("#tr").textContent = t; }); const p = rec.start();
         b.textContent = "⏹️ Terminar"; b.className = "btn rec";
         try { await p; } catch (e) { rec = null; D.modo = "auto"; return paso4(); }
@@ -119,7 +143,7 @@ VIEWS.diag = function () {
         b.dataset.fin = "1"; b.disabled = true;
         paraCD = cuentaRegresiva(45, t => { const c = $("#cd"); if (c) c.textContent = t; }, () => {
           $("#d-x").innerHTML = `<p><b>¿Qué tan fluido te sentiste?</b></p><div class="escala5">${[1, 2, 3, 4, 5].map(n => `<button data-n="${n}">${n}</button>`).join("")}</div><div class="escala5-ley"><span>Con muchas muletillas</span><span>Muy fluido</span></div>`;
-          document.querySelectorAll("#d-x .escala5 button").forEach(x => x.onclick = () => { D.fluidez = +x.dataset.n; resultado(); });
+          document.querySelectorAll("#d-x .escala5 button").forEach(x => x.onclick = () => { D.fluidez = +x.dataset.n; paso1(); });
         });
       }
     };

@@ -238,6 +238,11 @@ const VIEWS = {
     <button class="btn" id="ics">Agregar a mi calendario</button>
     <button class="btn sec" id="nt">Activar notificaciones de la app</button>
     <p class="sub">Las notificaciones de la app solo aparecen al abrirla (en iPhone, solo instalada en la pantalla de inicio). Para un aviso diario seguro, usa el calendario.</p></div>
+    <div class="card"><h2>🔧 Prueba técnica de voz</h2>
+    <p>Si <b>Medir</b> no te entiende, haz estas dos pruebas y manda una captura del resultado a quien te ayuda con la app. No se guarda ni se envía nada.</p>
+    <button class="btn sec" id="pt1">1. Probar el reconocimiento (di «uno, dos, tres»)</button>
+    <button class="btn sec" id="pt2">2. Usar el micrófono 2 s y luego probar el reconocimiento</button>
+    <pre id="pt-out" class="tecnico" aria-live="polite"></pre></div>
     <div class="card"><h2>🔒 Datos y privacidad</h2>
     <p><b>Tu historial y tus grabaciones se quedan en este dispositivo.</b> No hay servidor de Voz Clara ni cuentas.</p>
     <p><b>Ojo:</b> cuando tocas <b>Medir</b>, el reconocimiento de voz lo hace el propio navegador, que envía el audio a servidores de <b>Google</b> (Chrome) o de <b>Apple</b> (Safari) para convertirlo en texto. <b>Escucharme</b> y los medidores no envían nada: el audio solo se procesa en tu teléfono.</p>
@@ -255,6 +260,7 @@ const VIEWS = {
       const ok = await notificar("Voz Clara", "Así se verán tus avisos. Llegan al abrir la app si aún no practicas.");
       toast(ok ? "Notificaciones activadas" : "Este navegador no pudo mostrar la notificación.");
     };
+    pruebaTecnica();
     $("#ex").onclick = () => entregarArchivo(new Blob([JSON.stringify(S, null, 1)], { type: "application/json" }), `voz-clara-respaldo-${today()}.json`, "application/json", "Respaldo de Voz Clara");
     $("#im").onclick = () => $("#fi").click();
     $("#fi").onchange = async e => {
@@ -268,6 +274,37 @@ const VIEWS = {
     };
   }
 };
+// Prueba técnica: muestra qué eventos entrega el reconocimiento en este dispositivo.
+function pruebaTecnica() {
+  const out = $("#pt-out"); let rec = null;
+  const entorno = () => [`Reconocimiento: ${SR ? "disponible" : "NO disponible"} · estado: ${srEstado()}`, `iPhone/iPad: ${IS_IOS ? "sí" : "no"} · instalada: ${IS_STANDALONE ? "sí" : "no"} · Brave: ${IS_BRAVE ? "sí" : "no"}`, navigator.userAgent.replace(/^Mozilla\/5\.0 /, "")].join("\n");
+  const probar = async (titulo, b) => {
+    if (!SR) { out.textContent = entorno() + "\n\nEste navegador no trae reconocimiento de voz."; return; }
+    rec = new Reconocedor(() => {}); const p = rec.start();
+    b.disabled = true; out.textContent = titulo + "\nEscuchando 6 segundos… di «uno, dos, tres».";
+    let fallo = null; try { await p; } catch (e) { fallo = e; }
+    if (!fallo) await new Promise(r => setTimeout(r, 6000));
+    const r = fallo ? { text: "", error: fallo } : await rec.stop(); const traza = rec.traza || []; rec = null;
+    if (!$("#pt-out")) return;
+    b.disabled = false;
+    out.textContent = [titulo, entorno(), "", "Texto reconocido: " + (r.text ? "«" + r.text + "»" : "(nada)"), "Error: " + (r.error || fallo || "ninguno"), "Eventos:", ...(traza.length ? traza : ["(ninguno)"])].join("\n");
+  };
+  $("#pt1").onclick = () => probar("PRUEBA 1 · solo reconocimiento", $("#pt1"));
+  let listo = false;
+  $("#pt2").onclick = async () => {
+    const b = $("#pt2");
+    if (listo) { listo = false; b.textContent = "2. Usar el micrófono 2 s y luego probar el reconocimiento"; return probar("PRUEBA 2 · reconocimiento después del micrófono", b); }
+    b.disabled = true; out.textContent = "Usando el micrófono 2 segundos…";
+    const m = new Medidor(); let nivel = -100;
+    try { await m.start(); const fin = bucle(() => { nivel = Math.max(nivel, m.db()); }); await new Promise(r => setTimeout(r, 2000)); fin(); await m.stop(); }
+    catch (_) { if ($("#pt-out")) { out.textContent = "No se pudo usar el micrófono."; b.disabled = false; } return; }
+    if (!$("#pt-out")) return;
+    listo = true; b.disabled = false; b.textContent = "2b. Ahora toca aquí y di «uno, dos, tres»";
+    out.textContent = `Micrófono OK (nivel máximo ${nivel.toFixed(0)} dB). Ahora toca el botón «2b».`;
+  };
+  const previo = cleanup; cleanup = () => { previo && previo(); rec && rec.abort(); };
+}
+
 // Evento diario en hora local "flotante" (válido sin bloque de zona horaria y respeta la hora del teléfono).
 function descargarICS(h, m) {
   const d = today().replace(/-/g, ""), ahora = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15) + "Z";
