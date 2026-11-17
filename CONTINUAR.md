@@ -110,6 +110,8 @@ Qué hay:
 - En Ajustes: tarjeta «Reconocedor de voz propio (experimental)» con una prueba (acumula intentos para ver si funciona varias veces seguidas) y el interruptor para usarlo al medir.
 - `sw.js` guarda `vendor/` una sola vez (primero la copia guardada), para no volver a bajar 40 MB.
 
+**Primera prueba en el iPhone del dueño (versión 17):** el motor cargó (18 s la primera vez, 0.2 s después) y en el primer intento devolvió «tú» al decir «uno, dos, tres»; en el segundo y tercero, nada. Cambios de la versión 18 para atacarlo: la app convierte el audio a 16 kHz antes de enviarlo (clase `Remuestreador` en `js/voz.js`), usa **un solo** reconocedor que se reinicia con `FinalResult()` (antes creaba y borraba uno por sesión), conserva un solo `AudioContext`, etiqueta cada sesión para descartar resultados tardíos, y la prueba de Ajustes muestra cuántos bloques de audio llegaron, el volumen máximo y cuántas respuestas dio el motor. Con esos tres datos se distingue si falla el audio del iPhone o el motor.
+
 Qué se comprobó: en Chromium simulado el motor carga en unos 2 segundos, no viola la política de seguridad, admite varias sesiones seguidas y libera el micrófono.
 
 **Qué NO se ha comprobado (lo más importante):**

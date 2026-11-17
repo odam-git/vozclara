@@ -327,3 +327,19 @@ test("iPhone con la app instalada: se usa el micrófono salvo que se encienda la
   a = cargar({ antes: `SpeechRecognition = class {};` });
   assert.equal(a.ev("srEstado()"), "ok");
 });
+
+test("reconocedor propio: convierte 48 kHz y 44.1 kHz a 16 kHz sin perder ni duplicar audio", () => {
+  const a = cargar();
+  for (const fe of [48000, 44100, 16000, 8000]) {
+    const r = a.ev(`(() => { const c = new Remuestreador(${fe}, 16000); let n = 0, ok = true;
+      for (let b = 0; b < 30; b++) { const x = new Float32Array(4096); for (let i = 0; i < x.length; i++) x[i] = Math.sin(2 * Math.PI * 200 * (b * 4096 + i) / ${fe}) * 0.5;
+        const y = c.procesar(x); n += y.length; for (const v of y) if (!(Math.abs(v) <= 0.51)) ok = false; }
+      return { n, esperado: Math.round(30 * 4096 * 16000 / ${fe}), ok }; })()`);
+    assert.ok(Math.abs(r.n - r.esperado) <= 2, `${fe} Hz: ${r.n} muestras, se esperaban ${r.esperado}`);
+    assert.equal(r.ok, true, `${fe} Hz: valores fuera de rango`);
+  }
+  // Un tono de 200 Hz debe conservar su frecuencia tras la conversión (cruces por cero por segundo).
+  const cruces = a.ev(`(() => { const c = new Remuestreador(48000, 16000), x = new Float32Array(48000); for (let i = 0; i < x.length; i++) x[i] = Math.sin(2 * Math.PI * 200 * i / 48000);
+    const y = c.procesar(x); let k = 0; for (let i = 1; i < y.length; i++) if ((y[i - 1] < 0) !== (y[i] < 0)) k++; return k; })()`);
+  assert.ok(Math.abs(cruces - 400) <= 4, "cruces por cero: " + cruces);
+});

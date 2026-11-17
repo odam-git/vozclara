@@ -1,5 +1,5 @@
 // ====== UI ======
-const VERSION_APP = "17"; // súbela junto con VERSION en sw.js
+const VERSION_APP = "18"; // súbela junto con VERSION en sw.js
 const $ = s => document.querySelector(s);
 function toast(m) {
   let box = $("#toasts");
@@ -322,7 +322,7 @@ function pruebaMotorLocal() {
     pinta("🎙️ Escuchando 7 segundos: di «uno, dos, tres»…");
     await new Promise(r => setTimeout(r, 7000));
     const r = await rec.stop(); rec = null;
-    pruebasMotor.push(`listo en ${tListo.toFixed(1)} s · ${r.text ? "OYÓ «" + r.text.slice(0, 40) + "»" : "sin texto"}${r.error ? " [" + r.error + "]" : ""}`);
+    pruebasMotor.push(`listo en ${tListo.toFixed(1)} s · ${r.text ? "OYÓ «" + r.text.slice(0, 40) + "»" : "sin texto"}${r.error ? " [" + r.error + "]" : ""}\n   ${r.diag}${(r.traza || []).filter(t => /error|Hz/.test(t)).map(t => "\n   " + t).join("")}`);
     if (!$("#ml-out")) return;
     pinta(pruebasMotor.length >= 3 ? "\nManda una captura de este recuadro." : "\nToca otra vez el botón."); b.disabled = false;
   };

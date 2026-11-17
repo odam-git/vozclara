@@ -376,6 +376,40 @@ const MotorLocal = {
   escuchar(fn) { this._oyentes.add(fn); return () => this._oyentes.delete(fn); }
 };
 
+// Convierte audio de cualquier frecuencia (el iPhone graba a 44.1 o 48 kHz) a 16 kHz, la del modelo.
+// Promedia las muestras de cada intervalo (filtro sencillo contra el ruido de alta frecuencia) y
+// conserva el sobrante entre bloques para no perder ni duplicar audio.
+class Remuestreador {
+  constructor(entrada, salida = 16000) { this.razon = entrada / salida; this.pos = 0; this.resto = new Float32Array(0); }
+  procesar(bloque) {
+    const x = new Float32Array(this.resto.length + bloque.length); x.set(this.resto); x.set(bloque, this.resto.length);
+    const r = this.razon, out = [];
+    if (r <= 1) { // frecuencia de entrada igual o menor: interpolación lineal
+      let p = this.pos;
+      while (p + 1 < x.length) { const i = Math.floor(p), f = p - i; out.push(x[i] * (1 - f) + x[i + 1] * f); p += r; }
+      const corte = Math.floor(p); this.resto = x.slice(corte); this.pos = p - corte;
+      return Float32Array.from(out);
+    }
+    let p = this.pos;
+    while (p + r <= x.length) {
+      const a = Math.floor(p), b = Math.floor(p + r); let suma = 0;
+      for (let i = a; i < b; i++) suma += x[i];
+      out.push(b > a ? suma / (b - a) : x[a]); p += r;
+    }
+    const corte = Math.floor(p); this.resto = x.slice(corte); this.pos = p - corte;
+    return Float32Array.from(out);
+  }
+}
+
+// Un solo contexto de audio para el reconocedor propio, reactivado con cada toque (iOS limita cuántos se crean).
+let CTX_LOCAL = null, SESION_LOCAL = 0;
+function contextoLocal() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!CTX_LOCAL || CTX_LOCAL.state === "closed") CTX_LOCAL = new AC();
+  try { CTX_LOCAL.resume && CTX_LOCAL.resume(); } catch (_) {}
+  return CTX_LOCAL;
+}
+
 // Misma interfaz que Reconocedor, para que las pantallas no distingan cuál se usa.
 class ReconocedorLocal {
   constructor(onText) { this.onText = onText || (() => {}); }
@@ -383,13 +417,13 @@ class ReconocedorLocal {
     return new Promise(async (resolve, reject) => {
       if (AUDIO_ACTIVO.size) return reject("ocupado");
       AUDIO_ACTIVO.add(this); pantallaActiva(true);
+      this.s = ++SESION_LOCAL;
       this.segs = []; this.parcial = ""; this.err = null; this.traza = []; this.activo = true; this.ultimoFinal = false;
       this.tIni = performance.now(); this.tPrimero = null; this.tUltimo = null;
+      this.bloques = 0; this.picoDb = -100; this.nParciales = 0;
       const nota = e => this.traza.length < 60 && this.traza.push(((performance.now() - this.tIni) / 1000).toFixed(1) + "s " + e);
       this._nota = nota;
-      // El contexto de audio se crea dentro del toque (iOS lo exige).
-      const AC = window.AudioContext || window.webkitAudioContext;
-      try { this.ctx = new AC(); this.ctx.resume && this.ctx.resume(); } catch (_) { this._soltar(); return reject("sin-inicio"); }
+      try { this.ctx = contextoLocal(); } catch (_) { this._soltar(); return reject("sin-inicio"); } // dentro del toque
       const falla = motivo => { this.err = motivo; this._cerrarAudio(); this.activo = false; this._soltar(); reject(motivo); };
       try {
         if (MotorLocal.estado !== "listo") { nota("cargando motor"); this.onText("Cargando el reconocedor…"); }
@@ -401,38 +435,50 @@ class ReconocedorLocal {
       if (this.cancelado) { stream.getTracks().forEach(t => t.stop()); return falla("aborted"); }
       this.stream = stream;
       try { await this.ctx.resume(); } catch (_) {}
-      const frecuencia = this.ctx.sampleRate;
+      const entrada = this.ctx.sampleRate;
+      nota("audio " + entrada + " Hz, " + this.ctx.state);
       this._quitar = MotorLocal.escuchar(d => {
+        if (d.s !== this.s) return; // mensajes de otra sesión (por ejemplo, un resultado que llegó tarde)
         const ahora = performance.now();
         if (d.t === "parcial") {
+          this.nParciales++;
           if (d.texto && d.texto !== this.parcial) { if (this.tPrimero == null) { this.tPrimero = ahora; nota("primer texto"); } this.tUltimo = ahora; this.ultimoFinal = false; }
           this.parcial = d.texto || ""; if (this.activo && this.texto(true)) this.onText(this.texto(true));
         } else if (d.t === "final") {
           if (d.texto) { this.segs.push(d.texto); if (this.tPrimero == null) this.tPrimero = ahora; this.tUltimo = ahora; this.ultimoFinal = true; nota("final (" + this.segs.length + ")"); }
           this.parcial = ""; if (this.activo && this.texto(true)) this.onText(this.texto(true));
         } else if (d.t === "iniciado") {
-          nota("escuchando a " + frecuencia + " Hz");
+          const conv = new Remuestreador(entrada, d.frecuencia || 16000);
           const src = this.ctx.createMediaStreamSource(this.stream), nodo = this.ctx.createScriptProcessor(4096, 1, 1), mudo = this.ctx.createGain();
           mudo.gain.value = 0; // el nodo debe estar conectado para funcionar, pero sin sonar por la bocina
-          nodo.onaudioprocess = ev => { if (!this.activo) return; const m = new Float32Array(ev.inputBuffer.getChannelData(0)); MotorLocal.enviar({ t: "audio", muestras: m, frecuencia }, [m.buffer]); };
-          src.connect(nodo); nodo.connect(mudo); mudo.connect(this.ctx.destination); this.nodo = nodo;
+          nodo.onaudioprocess = ev => {
+            if (!this.activo) return;
+            const crudo = ev.inputBuffer.getChannelData(0); let suma = 0;
+            for (let i = 0; i < crudo.length; i++) suma += crudo[i] * crudo[i];
+            const db = suma > 0 ? 10 * Math.log10(suma / crudo.length) : -100; if (db > this.picoDb) this.picoDb = db;
+            const m = conv.procesar(crudo); this.bloques++;
+            if (m.length) MotorLocal.enviar({ t: "audio", s: this.s, muestras: m }, [m.buffer]);
+          };
+          src.connect(nodo); nodo.connect(mudo); mudo.connect(this.ctx.destination); this.src = src; this.nodo = nodo; this.mudo = mudo;
+          nota("escuchando (convierto a " + (d.frecuencia || 16000) + " Hz)");
           resolve();
-        } else if (d.t === "error") { nota("error: " + d.msg); this.err = "motor"; }
+        } else if (d.t === "error") { nota("error del motor: " + String(d.msg).slice(0, 80)); this.err = "motor"; }
         else if (d.t === "terminado" && this._fin) this._fin();
       });
-      MotorLocal.enviar({ t: "iniciar", frecuencia });
+      MotorLocal.enviar({ t: "iniciar", s: this.s });
     });
   }
   texto(conParcial) { const p = this.segs.slice(); if (conParcial && this.parcial) p.push(this.parcial); return p.join(" ").trim(); }
   resultado() {
     const habla = this.tPrimero != null && this.tUltimo > this.tPrimero ? (this.tUltimo - this.tPrimero) / 1000 + 0.6 : null;
-    return { traza: (this.traza || []).slice(), text: this.texto(false), segs: this.segs.slice(), secs: (performance.now() - this.tIni) / 1000, hablaSecs: habla, error: this.err, motor: "local" };
+    const diag = `${this.bloques} bloques de audio · volumen máx ${this.picoDb.toFixed(0)} dB · ${this.nParciales} respuestas del motor`;
+    return { traza: [...(this.traza || []), diag], diag, text: this.texto(false), segs: this.segs.slice(), secs: (performance.now() - this.tIni) / 1000, hablaSecs: habla, error: this.err, motor: "local" };
   }
   _cerrarAudio() {
     try { if (this.nodo) { this.nodo.onaudioprocess = null; this.nodo.disconnect(); } } catch (_) {}
+    try { this.src && this.src.disconnect(); this.mudo && this.mudo.disconnect(); } catch (_) {}
     if (this.stream) this.stream.getTracks().forEach(t => t.stop());
-    try { this.ctx && this.ctx.state !== "closed" && this.ctx.close(); } catch (_) {}
-    this.nodo = null; this.stream = null;
+    this.nodo = this.src = this.mudo = null; this.stream = null; // el contexto se conserva para la siguiente sesión
   }
   _soltar() { if (this._quitar) { this._quitar(); this._quitar = null; } if (AUDIO_ACTIVO.delete(this)) pantallaActiva(false); }
   stop() {
@@ -442,11 +488,11 @@ class ReconocedorLocal {
       const fin = () => { if (listo) return; listo = true; if (this.parcial) { this.segs.push(this.parcial); this.parcial = ""; } this._soltar(); res(this.resultado()); };
       if (!this.activo) return fin();
       this.activo = false; this._nota("stop"); this._cerrarAudio();
-      this._fin = fin; MotorLocal.enviar({ t: "fin", espera: 1200 });
+      this._fin = fin; MotorLocal.enviar({ t: "fin", s: this.s, espera: 1200 });
       setTimeout(fin, 4000); // por si el motor no contesta
     });
   }
-  abort() { this.cancelado = true; this.activo = false; this.alCerrar = null; this._cerrarAudio(); MotorLocal.enviar({ t: "cancelar" }); this._soltar(); }
+  abort() { this.cancelado = true; this.activo = false; this.alCerrar = null; this._cerrarAudio(); MotorLocal.enviar({ t: "cancelar", s: this.s }); this._soltar(); }
   cancelar() { this.abort(); }
 }
 

@@ -50,7 +50,7 @@ function medirYEscuchar(cfg) {
           else if (vacios >= 2) {
             // Falla silenciosa: el reconocimiento arranca pero no entiende. Se ofrece el plan B sin marcarlo como permanente.
             q("res").innerHTML = `<div class="aviso" role="note"><b>El reconocimiento no está entendiendo tu voz.</b>
-              <div>Revisa tu conexión a internet y que ninguna otra app use el micrófono.${IS_IOS ? " En iPhone, confirma que el dictado esté activo en <b>Ajustes › General › Teclado › Dictado</b>." : ""}
+              <div>${usarMotorLocal() ? "Habla un poco más cerca y más despacio; el reconocedor propio entiende peor que el del navegador." : `Revisa tu conexión a internet y que ninguna otra app use el micrófono.${IS_IOS ? " En iPhone, confirma que el dictado esté activo en <b>Ajustes › General › Teclado › Dictado</b>." : ""}`}
               Mientras tanto, toca <b>Escucharme</b> y califícate con estrellas: esa práctica sí cuenta.</div></div>`;
           }
           toast(MENSAJE_SR[r.error] || "No te escuché. Acércate al micrófono e intenta de nuevo.");
