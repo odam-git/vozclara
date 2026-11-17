@@ -20,9 +20,14 @@ const modoApp = () => (IS_STANDALONE ? "instalada" : "navegador");
 const SR_FATAL = ["not-allowed", "service-not-allowed", "language-not-supported", "audio-capture"];
 
 // "ok" | "sin" (el navegador no lo trae) | "falla" (lo trae pero aquí no funciona)
+// En iPhone, la app instalada en la pantalla de inicio solo reconoce voz UNA vez por apertura
+// (comprobado en un iPhone real). Ahí se trabaja con micrófono y autocalificación, salvo que la
+// persona active la medición automática a sabiendas en Ajustes.
+const SR_IOS_INSTALADA = IS_IOS && IS_STANDALONE;
 function srEstado() {
   if (!SR) return "sin";
   if (IS_BRAVE) return "falla";
+  if (SR_IOS_INSTALADA && !ENV.forzarSR) return "falla";
   const f = ENV.srFalla && ENV.srFalla[modoApp()];
   return f ? "falla" : "ok";
 }
@@ -37,6 +42,7 @@ function marcarSRok() { if (ENV.srFalla && ENV.srFalla[modoApp()]) { delete ENV.
 // Explicación clara de por qué no mide y cómo lograr que sí mida.
 function srAyuda() {
   const err = ENV.srFalla && ENV.srFalla[modoApp()] && ENV.srFalla[modoApp()].error;
+  if (SR_IOS_INSTALADA && !ENV.forzarSR) return "En iPhone, la app instalada solo permite el reconocimiento de voz de Apple <b>una vez cada que la abres</b>, así que aquí se mide con el micrófono: toca <b>Escucharme</b> para ver tu ritmo y tus pausas, oírte y calificarte. La precisión palabra por palabra y las muletillas se miden en Android o en computadora (Chrome).";
   if (IS_BRAVE) return "Brave bloquea el reconocimiento de voz. Para medir, abre esta misma dirección en <b>Safari</b> (iPhone) o <b>Chrome</b> (Android/PC).";
   if (IOS_OTRO_NAV) return "En iPhone, este navegador no ofrece reconocimiento de voz. Abre esta dirección en <b>Safari</b> para medir.";
   if (!SR) return "Tu navegador no tiene reconocimiento de voz. Usa <b>Safari</b> (iPhone) o <b>Chrome</b> (Android/PC) para medir.";

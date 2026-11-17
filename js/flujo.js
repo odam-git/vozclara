@@ -1,7 +1,7 @@
 // ====== Flujo en dos tiempos: "Medir" (solo reconocimiento) y "Escucharme" (solo grabación) ======
 // cfg: { el, tipo, nivel, extra, evaluar(r) -> html, alIniciar(modo), alTerminar(modo), etiquetaMedir }
 function medirYEscuchar(cfg) {
-  let rec = null, med = null, paraMedidor = null, ocupado = false, vivo = true, vacios = 0;
+  let rec = null, med = null, paraMedidor = null, ocupado = false, vivo = true, vacios = 0, cuadros = [];
   const el = cfg.el;
 
   function pintar() {
@@ -10,9 +10,9 @@ function medirYEscuchar(cfg) {
       <div class="trans" data-id="tr" aria-live="polite"></div>
       ${sr === "ok"
         ? `<button class="btn" data-id="medir">🎯 ${cfg.etiquetaMedir || "Medir"}</button>`
-        : `<div class="aviso" role="note"><b>Sin medición automática aquí.</b><div>${srAyuda()}</div>${SR && !IS_BRAVE ? `<button class="btn sec" data-id="re">Reintentar medir</button>` : ""}</div>`}
+        : `<div class="aviso" role="note"><b>${SR_IOS_INSTALADA && !ENV.forzarSR ? "En este iPhone se mide con el micrófono." : "Sin medición automática aquí."}</b><div>${srAyuda()}</div>${SR && !IS_BRAVE && !(SR_IOS_INSTALADA && !ENV.forzarSR) ? `<button class="btn sec" data-id="re">Reintentar medir</button>` : ""}</div>`}
       <div data-id="res"></div>
-      <button class="btn sec" data-id="esc">🎧 Escucharme</button>
+      <button class="btn ${sr === "ok" ? "sec" : ""}" data-id="esc">🎧 Escucharme${sr === "ok" ? "" : " y medir mi ritmo"}</button>
       <div class="meter hidden" data-id="mt"><div></div></div>
       <div data-id="aud"></div>`;
     const q = id => el.querySelector(`[data-id="${id}"]`);
@@ -75,20 +75,25 @@ function medirYEscuchar(cfg) {
         bEsc.disabled = false;
         bEsc.textContent = "⏹️ Terminar"; bEsc.className = "btn rec"; q("aud").innerHTML = "";
         const mt = q("mt"); mt.classList.remove("hidden");
-        paraMedidor = bucle(() => { mt.firstElementChild.style.width = (m.nivel() * 100) + "%"; });
+        cuadros = [];
+        paraMedidor = bucle(() => { const db = m.db(); cuadros.push({ t: m.segundos(), db }); mt.firstElementChild.style.width = Math.max(0, Math.min(1, (db + 60) / 55)) * 100 + "%"; });
         cfg.alIniciar && cfg.alIniciar("escuchar");
       } else {
         ocupado = true; paraMedidor && paraMedidor(); q("mt").classList.add("hidden");
         const r = await med.stop(); med = null; ocupado = false; if (!vivo) return;
         cfg.alTerminar && cfg.alTerminar("escuchar");
         bEsc.textContent = "🎧 Escucharme otra vez"; bEsc.className = "btn sec"; if (bMed) bMed.disabled = false;
-        q("aud").innerHTML = (r.audio ? `<h3>Escúchate</h3><audio controls src="${r.audio}" style="width:100%"></audio>` : `<p class="sub">Este navegador no pudo grabar audio.</p>`) +
+        // Medición con el micrófono (funciona en cualquier teléfono, sin reconocimiento de voz).
+        const mh = medirHabla(cuadros, cfg.objetivo ? palabras(cfg.objetivo).length : 0);
+        cfg.alEscuchar && cfg.alEscuchar(mh);
+        const resumen = mh ? `<div class="stats" style="margin-top:12px">${mh.wpm ? `<div class="stat"><b>${mh.wpm}</b><span>palabras/min</span></div>` : ""}<div class="stat"><b>${mh.habla.toFixed(0)}s</b><span>hablando</span></div><div class="stat"><b>${mh.pausas}</b><span>pausas</span></div></div>${mh.wpm ? `<p class="sub">El ritmo supone que leíste el texto completo, una sola vez.</p>` : ""}` : `<p class="sub">No alcancé a detectar tu voz. Acércate un poco al micrófono.</p>`;
+        q("aud").innerHTML = resumen + (r.audio ? `<h3>Escúchate</h3><audio controls src="${r.audio}" style="width:100%"></audio>` : `<p class="sub">Este navegador no pudo grabar audio.</p>`) +
           estrellasHTML(srEstado() !== "ok" || vacios >= 2);
         let ses = null;
         conectarEstrellas(q("aud"), n => {
           // La primera vez se registra; si cambias de opinión, se corrige la misma práctica.
           if (ses) { ses.self = n; save(); return; }
-          ses = logSession(cfg.tipo, { self: n, modo: "auto", level: cfg.nivel, secs: Math.round(r.secs), ...(cfg.extra || {}) });
+          ses = logSession(cfg.tipo, { self: n, modo: "auto", level: cfg.nivel, secs: Math.round(mh ? mh.habla : r.secs), ...(mh && mh.wpm ? { wpm: mh.wpm } : {}), ...(mh ? { pausas: mh.pausas } : {}), ...(cfg.extra || {}) });
           if (["art", "read", "impro"].includes(cfg.tipo) && typeof ajustarNivel === "function") ajustarNivel(cfg.tipo, ses);
         });
       }

@@ -41,6 +41,8 @@ function turnoHablado(el, tipo, extra, seg, alMedir) {
   let paraCD = null;
   const ctl = medirYEscuchar({
     el, tipo, extra, etiquetaMedir: "Medir mi intervención",
+    // Sin reconocimiento, el micrófono da la duración: también cuenta como intervención medida.
+    alEscuchar: mh => { if (mh) alMedir({ mul: null, wpm: null, secs: Math.round(mh.habla), words: null }); },
     alIniciar: () => { callar(); paraCD = cuentaRegresiva(seg, t => { const c = $("#j-cd"); if (c) { c.textContent = t; c.classList.toggle("fin", t === 0); } }); },
     alTerminar: () => { paraCD && paraCD(); paraCD = null; },
     evaluar: r => {

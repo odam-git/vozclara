@@ -1,5 +1,5 @@
 // ====== UI ======
-const VERSION_APP = "15"; // súbela junto con VERSION en sw.js
+const VERSION_APP = "16"; // súbela junto con VERSION en sw.js
 const $ = s => document.querySelector(s);
 function toast(m) {
   let box = $("#toasts");
@@ -147,7 +147,7 @@ const VIEWS = {
     <button class="btn sec" id="otro">🔀 Otro trabalenguas</button></div>`;
     $("#otro").onclick = () => go("art", pick(pool.filter(x => x.n === tw.n && x !== tw)) || tw);
     const ctl = medirYEscuchar({
-      el: $("#flujo"), tipo: "art", nivel: tw.n, extra: { f, tid: tw.id },
+      el: $("#flujo"), tipo: "art", nivel: tw.n, extra: { f, tid: tw.id }, objetivo: tw.t,
       evaluar: r => {
         const ok = lcsMatch(tw.t, r.text); const acc = Math.round(ok.filter(Boolean).length / ok.length * 100);
         let k = 0; $("#tg").innerHTML = palabrasVisibles(tw.t).map(p => { const bien = ok.slice(k, k + p.k).every(Boolean); k += p.k; return `<span class="${bien ? "w-ok" : "w-bad"}">${esc(p.w)}</span>`; }).join(" ");
@@ -167,7 +167,7 @@ const VIEWS = {
     <button class="btn sec" id="otro">🔀 Otra lectura</button></div>`;
     $("#otro").onclick = () => go("read", pick(LECTURAS.filter(x => x !== L)));
     const ctl = medirYEscuchar({
-      el: $("#flujo"), tipo: "read", nivel: L.nivel, extra: { lid: L.id },
+      el: $("#flujo"), tipo: "read", nivel: L.nivel, extra: { lid: L.id }, objetivo: txt,
       evaluar: r => {
         const dur = r.hablaSecs, ok = lcsMatch(txt, r.text), acc = porcentaje(ok);
         const leidas = palabrasLeidas(ok), parcial = leidas < ok.length * 0.8;
@@ -256,6 +256,7 @@ const VIEWS = {
     <p><b>Ojo:</b> cuando tocas <b>Medir</b>, el reconocimiento de voz lo hace el propio navegador, que envía el audio a servidores de <b>Google</b> (Chrome) o de <b>Apple</b> (Safari) para convertirlo en texto. <b>Escucharme</b> y los medidores no envían nada: el audio solo se procesa en tu teléfono.</p>
     <button class="btn sec" id="ex">Exportar respaldo</button><button class="btn sec" id="im">Importar respaldo</button><input type="file" id="fi" class="hidden" accept=".json,application/json">
     <div id="imp"></div></div>
+    ${SR_IOS_INSTALADA ? `<div class="card"><h2>🎯 Medición automática en este iPhone</h2><p>En la app instalada, el iPhone solo reconoce la voz <b>una vez cada que abres la app</b>. Por eso viene apagada y se mide con el micrófono. Si la enciendes, <b>Medir</b> funcionará en tu primer ejercicio y después tendrás que cerrar y abrir la app.</p><button class="btn sec" id="fsr">${ENV.forzarSR ? "Apagar la medición automática" : "Encender la medición automática"}</button></div>` : ""}
     <button class="btn sec" id="act">🔄 Buscar actualización</button>
     <p class="sub" style="text-align:center">Voz Clara · versión ${VERSION_APP}</p>`;
     $("#sv").onclick = () => { S.settings.name = $("#nm").value.trim().slice(0, 40); S.settings.focus = $("#fc").value; S.settings.hour = $("#hr").value || "07:30"; save(); greet(); toast("Guardado"); };
@@ -271,6 +272,7 @@ const VIEWS = {
       toast(ok ? "Notificaciones activadas" : "Este navegador no pudo mostrar la notificación.");
     };
     pruebaTecnica();
+    if ($("#fsr")) $("#fsr").onclick = () => { ENV.forzarSR = !ENV.forzarSR; if (ENV.srFalla) delete ENV.srFalla[modoApp()]; saveEnv(); toast(ENV.forzarSR ? "Medición automática encendida" : "Medición automática apagada"); go("ajustes"); };
     // Fuerza la descarga de la versión más reciente (no toca el historial, que vive aparte).
     $("#act").onclick = async () => {
       $("#act").disabled = true; $("#act").textContent = "Buscando…";

@@ -41,6 +41,28 @@ function calcularWpm(nPalabras, segs) {
 }
 const porcentaje = ok => ok.length ? Math.round(ok.filter(Boolean).length / ok.length * 100) : 0;
 
+// Mide el habla a partir del nivel del micrófono (sin reconocimiento): tiempo hablando, pausas y,
+// si se conoce el texto leído, palabras por minuto. cuadros = [{ t (s), db }]
+function medirHabla(cuadros, nPalabras) {
+  if (!cuadros || cuadros.length < 20) return null;
+  const dbs = cuadros.map(c => c.db).sort((a, b) => a - b);
+  const piso = dbs[Math.floor(dbs.length * 0.1)], umbral = Math.max(piso + 10, -55);
+  const tramos = []; let ini = null, ult = null;
+  for (const c of cuadros) {
+    if (c.db > umbral) { if (ini == null) ini = c.t; ult = c.t; }
+    else if (ini != null && c.t - ult > 0.12) { tramos.push([ini, ult]); ini = null; }
+  }
+  if (ini != null) tramos.push([ini, ult]);
+  const voz = [];
+  for (const s of tramos) { const p = voz[voz.length - 1]; if (p && s[0] - p[1] < 0.25) p[1] = s[1]; else voz.push(s.slice()); }
+  const validos = voz.filter(s => s[1] - s[0] >= 0.15);
+  if (!validos.length) return null;
+  const habla = validos[validos.length - 1][1] - validos[0][0];
+  if (habla < 1) return null;
+  let pausas = 0; for (let i = 0; i < validos.length - 1; i++) if (validos[i + 1][0] - validos[i][1] >= 0.35) pausas++;
+  return { habla: +habla.toFixed(1), pausas, wpm: nPalabras ? calcularWpm(nPalabras, habla) : null };
+}
+
 // Para resaltar: separa el texto visible en palabras con la misma cuenta que palabras().
 function palabrasVisibles(texto) {
   const out = [];

@@ -300,3 +300,30 @@ test("reconocimiento fuera de iPhone: sí se reanuda si el navegador corta por s
   await a.ev(`(async () => { const rec = new Reconocedor(); await rec.start(); await new Promise(r => setTimeout(r, 150)); await rec.stop(); })()`);
   assert.equal(a.ev("__inicios"), 2);
 });
+
+test("medición con micrófono: tiempo hablando, pausas y ritmo sin reconocimiento de voz", () => {
+  const a = cargar();
+  a.ev(`cq = segs => { const o = []; for (let t = 0; t < 12; t += 1 / 60) o.push({ t, db: segs.some(([x, y]) => t >= x && t <= y) ? -25 : -62 }); return o; }`);
+  const m = a.ev(`medirHabla(cq([[1, 4], [4.8, 8], [8.6, 11]]), 30)`);
+  assert.equal(m.pausas, 2);
+  assert.ok(Math.abs(m.habla - 10) < 0.2);
+  assert.equal(m.wpm, 180);
+  assert.equal(a.ev(`medirHabla(cq([]), 30)`), null, "silencio: sin medición");
+  assert.equal(a.ev(`medirHabla([], 30)`), null);
+  assert.equal(a.ev(`medirHabla(cq([[1, 4]]), 0).wpm`), null, "sin texto conocido no se inventa el ritmo");
+});
+
+test("iPhone con la app instalada: se usa el micrófono salvo que se encienda la medición automática", () => {
+  const ios = `navigator.userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)"; navigator.standalone = true; SpeechRecognition = class {};`;
+  let a = cargar({ antes: ios });
+  assert.equal(a.ev("SR_IOS_INSTALADA"), true);
+  assert.equal(a.ev("srEstado()"), "falla");
+  assert.ok(a.ev("srAyuda()").includes("Escucharme"));
+  a.ev("ENV.forzarSR = true");
+  assert.equal(a.ev("srEstado()"), "ok");
+  // En Safari (no instalada) y en otros equipos no se toca nada.
+  a = cargar({ antes: `navigator.userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)"; SpeechRecognition = class {};` });
+  assert.equal(a.ev("srEstado()"), "ok");
+  a = cargar({ antes: `SpeechRecognition = class {};` });
+  assert.equal(a.ev("srEstado()"), "ok");
+});
