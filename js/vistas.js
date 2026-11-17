@@ -1,5 +1,5 @@
 // ====== UI ======
-const VERSION_APP = "16"; // súbela junto con VERSION en sw.js
+const VERSION_APP = "17"; // súbela junto con VERSION en sw.js
 const $ = s => document.querySelector(s);
 function toast(m) {
   let box = $("#toasts");
@@ -257,6 +257,14 @@ const VIEWS = {
     <button class="btn sec" id="ex">Exportar respaldo</button><button class="btn sec" id="im">Importar respaldo</button><input type="file" id="fi" class="hidden" accept=".json,application/json">
     <div id="imp"></div></div>
     ${SR_IOS_INSTALADA ? `<div class="card"><h2>🎯 Medición automática en este iPhone</h2><p>En la app instalada, el iPhone solo reconoce la voz <b>una vez cada que abres la app</b>. Por eso viene apagada y se mide con el micrófono. Si la enciendes, <b>Medir</b> funcionará en tu primer ejercicio y después tendrás que cerrar y abrir la app.</p><button class="btn sec" id="fsr">${ENV.forzarSR ? "Apagar la medición automática" : "Encender la medición automática"}</button></div>` : ""}
+    <div class="card"><h2>🧪 Reconocedor de voz propio (experimental)</h2>
+    <p>Reconoce tu voz <b>dentro del teléfono</b>, sin depender de Apple ni de Google; el audio no sale del equipo. Sirve para medir precisión y muletillas donde el reconocimiento del navegador falla (por ejemplo, en iPhone con la app instalada).</p>
+    <p class="sub">La primera vez descarga unos 40 MB (mejor con wifi). Reconoce algo peor que el del navegador, sobre todo en trabalenguas.</p>
+    <button class="btn sec" id="ml-pr">Probar: toca y di «uno, dos, tres»</button>
+    <p class="sub">Tócalo <b>tres veces</b> (espera a que termine cada una) y manda una captura del recuadro.</p>
+    <pre id="ml-out" class="tecnico" aria-live="polite"></pre>
+    <button class="btn ${usarMotorLocal() ? "sec" : ""}" id="ml-on">${usarMotorLocal() ? "Dejar de usar el reconocedor propio" : "Usar el reconocedor propio para medir"}</button>
+    <p class="sub">${usarMotorLocal() ? "✅ Encendido: <b>Medir</b> usa el reconocedor propio." : "Apagado: se usa el reconocimiento del navegador (o el micrófono en iPhone instalado)."}</p></div>
     <button class="btn sec" id="act">🔄 Buscar actualización</button>
     <p class="sub" style="text-align:center">Voz Clara · versión ${VERSION_APP}</p>`;
     $("#sv").onclick = () => { S.settings.name = $("#nm").value.trim().slice(0, 40); S.settings.focus = $("#fc").value; S.settings.hour = $("#hr").value || "07:30"; save(); greet(); toast("Guardado"); };
@@ -272,6 +280,8 @@ const VIEWS = {
       toast(ok ? "Notificaciones activadas" : "Este navegador no pudo mostrar la notificación.");
     };
     pruebaTecnica();
+    pruebaMotorLocal();
+    $("#ml-on").onclick = () => { ENV.motorLocal = !usarMotorLocal(); saveEnv(); toast(ENV.motorLocal ? "Reconocedor propio encendido" : "Reconocedor propio apagado"); go("ajustes"); };
     if ($("#fsr")) $("#fsr").onclick = () => { ENV.forzarSR = !ENV.forzarSR; if (ENV.srFalla) delete ENV.srFalla[modoApp()]; saveEnv(); toast(ENV.forzarSR ? "Medición automática encendida" : "Medición automática apagada"); go("ajustes"); };
     // Fuerza la descarga de la versión más reciente (no toca el historial, que vive aparte).
     $("#act").onclick = async () => {
@@ -295,6 +305,30 @@ const VIEWS = {
     };
   }
 };
+// Prueba del reconocedor propio: carga el motor, escucha 7 s y muestra el texto. Las pruebas se acumulan
+// para ver si funciona varias veces seguidas.
+let pruebasMotor = [];
+function pruebaMotorLocal() {
+  const out = $("#ml-out"), b = $("#ml-pr"); let rec = null;
+  const pinta = extra => { out.textContent = ["RECONOCEDOR PROPIO (v" + VERSION_APP + (IS_STANDALONE ? ", instalada" : ", navegador") + ")", ...pruebasMotor.map((t, i) => `${i + 1}) ${t}`), extra || ""].join("\n").trim(); };
+  if (pruebasMotor.length) pinta();
+  b.onclick = async () => {
+    b.disabled = true; const t0 = performance.now(); let tListo = null;
+    rec = new ReconocedorLocal(t => { if ($("#ml-out")) pinta("Oyendo: " + t); });
+    const p = rec.start(); // dentro del toque
+    pinta(MotorLocal.estado === "listo" ? "Abriendo el micrófono…" : "Descargando y preparando el reconocedor (puede tardar un minuto)…");
+    try { await p; tListo = (performance.now() - t0) / 1000; }
+    catch (e) { const tr = (rec.traza || []).join(" · "); rec = null; pruebasMotor.push("FALLÓ al iniciar [" + e + "] " + tr); if ($("#ml-out")) { pinta(); b.disabled = false; } return; }
+    pinta("🎙️ Escuchando 7 segundos: di «uno, dos, tres»…");
+    await new Promise(r => setTimeout(r, 7000));
+    const r = await rec.stop(); rec = null;
+    pruebasMotor.push(`listo en ${tListo.toFixed(1)} s · ${r.text ? "OYÓ «" + r.text.slice(0, 40) + "»" : "sin texto"}${r.error ? " [" + r.error + "]" : ""}`);
+    if (!$("#ml-out")) return;
+    pinta(pruebasMotor.length >= 3 ? "\nManda una captura de este recuadro." : "\nToca otra vez el botón."); b.disabled = false;
+  };
+  const previo = cleanup; cleanup = () => { previo && previo(); rec && rec.abort(); };
+}
+
 // Prueba técnica: muestra qué eventos entrega el reconocimiento en este dispositivo.
 function pruebaTecnica() {
   const out = $("#pt-out"); let rec = null;

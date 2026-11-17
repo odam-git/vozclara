@@ -25,6 +25,7 @@ const SR_FATAL = ["not-allowed", "service-not-allowed", "language-not-supported"
 // persona active la medición automática a sabiendas en Ajustes.
 const SR_IOS_INSTALADA = IS_IOS && IS_STANDALONE;
 function srEstado() {
+  if (typeof usarMotorLocal === "function" && usarMotorLocal()) return "ok"; // reconocedor propio: no depende del navegador
   if (!SR) return "sin";
   if (IS_BRAVE) return "falla";
   if (SR_IOS_INSTALADA && !ENV.forzarSR) return "falla";
@@ -85,7 +86,7 @@ let SR_VIVO = null;
 // pero no recibe sonido. Se mide desde que la sesión anterior quedó cerrada.
 let SR_FIN = -1e9;
 const SR_PAUSA = IS_IOS ? 4000 : 400;
-const srFaltan = () => Math.max(0, Math.ceil(SR_PAUSA - (performance.now() - SR_FIN)));
+const srFaltan = () => (typeof usarMotorLocal === "function" && usarMotorLocal() ? 0 : Math.max(0, Math.ceil(SR_PAUSA - (performance.now() - SR_FIN))));
 // Deja el botón en espera hasta que el reconocimiento pueda usarse otra vez.
 function cuandoSRListo(boton) {
   const ms = srFaltan(); if (!boton || !ms) return;
@@ -94,6 +95,7 @@ function cuandoSRListo(boton) {
 } // la única sesión de reconocimiento que puede existir a la vez
 const MENSAJE_SR = {
   "ocupado": "Espera a que termine la grabación.",
+  "motor": "No se pudo cargar el reconocedor propio. Revisa tu conexión e intenta de nuevo, o apágalo en Ajustes.",
   "no-speech": "No te escuché. Acércate al micrófono e intenta de nuevo.",
   "network": "El reconocimiento de voz necesita internet. Revisa tu conexión.",
   "aborted": "Se interrumpió la medición.",
@@ -338,3 +340,115 @@ function bucle(fn) {
   id = requestAnimationFrame(paso);
   return () => { vivo = false; cancelAnimationFrame(id); };
 }
+
+// ====== Reconocedor de voz propio (Vosk), experimental ======
+// Corre dentro del teléfono, en un compartimento aparte (vendor/motor.html), y recibe el audio del
+// micrófono directo. No depende del reconocimiento de Apple o Google y el audio nunca sale del equipo.
+// Se enciende en Ajustes (ENV.motorLocal). Pesa unos 40 MB la primera vez.
+const usarMotorLocal = () => ENV.motorLocal === true;
+const MotorLocal = {
+  marco: null, estado: "apagado", _espera: null, _oyentes: new Set(),
+  // Carga el compartimento y el modelo. Devuelve una promesa que termina cuando está listo para usarse.
+  cargar() {
+    if (this.estado === "listo") return Promise.resolve();
+    if (this._espera) return this._espera;
+    this.estado = "cargando";
+    this._espera = new Promise((resolve, reject) => {
+      const f = document.createElement("iframe");
+      f.src = "vendor/motor.html"; f.hidden = true; f.setAttribute("aria-hidden", "true"); f.title = "Motor de voz";
+      const fallo = msg => { this.estado = "error"; this._espera = null; try { f.remove(); } catch (_) {} this.marco = null; reject(msg || "motor"); };
+      const tope = setTimeout(() => fallo("El reconocedor tardó demasiado en cargar."), 180000);
+      this._alMensaje = e => {
+        if (!this.marco || e.source !== this.marco.contentWindow || e.origin !== location.origin) return;
+        const d = e.data || {};
+        if (d.t === "puente") this.enviar({ t: "cargar" });
+        else if (d.t === "listo") { clearTimeout(tope); this.estado = "listo"; resolve(); }
+        else if (d.t === "error" && this.estado !== "listo") { clearTimeout(tope); fallo(d.msg); }
+        for (const o of [...this._oyentes]) { try { o(d); } catch (_) {} }
+      };
+      window.addEventListener("message", this._alMensaje);
+      f.onerror = () => { clearTimeout(tope); fallo("No se pudo abrir el reconocedor."); };
+      this.marco = f; document.body.appendChild(f);
+    });
+    return this._espera;
+  },
+  enviar(m, transferir) { if (this.marco && this.marco.contentWindow) this.marco.contentWindow.postMessage(m, location.origin, transferir || []); },
+  escuchar(fn) { this._oyentes.add(fn); return () => this._oyentes.delete(fn); }
+};
+
+// Misma interfaz que Reconocedor, para que las pantallas no distingan cuál se usa.
+class ReconocedorLocal {
+  constructor(onText) { this.onText = onText || (() => {}); }
+  start() {
+    return new Promise(async (resolve, reject) => {
+      if (AUDIO_ACTIVO.size) return reject("ocupado");
+      AUDIO_ACTIVO.add(this); pantallaActiva(true);
+      this.segs = []; this.parcial = ""; this.err = null; this.traza = []; this.activo = true; this.ultimoFinal = false;
+      this.tIni = performance.now(); this.tPrimero = null; this.tUltimo = null;
+      const nota = e => this.traza.length < 60 && this.traza.push(((performance.now() - this.tIni) / 1000).toFixed(1) + "s " + e);
+      this._nota = nota;
+      // El contexto de audio se crea dentro del toque (iOS lo exige).
+      const AC = window.AudioContext || window.webkitAudioContext;
+      try { this.ctx = new AC(); this.ctx.resume && this.ctx.resume(); } catch (_) { this._soltar(); return reject("sin-inicio"); }
+      const falla = motivo => { this.err = motivo; this._cerrarAudio(); this.activo = false; this._soltar(); reject(motivo); };
+      try {
+        if (MotorLocal.estado !== "listo") { nota("cargando motor"); this.onText("Cargando el reconocedor…"); }
+        await MotorLocal.cargar(); nota("motor listo");
+      } catch (e) { nota("error motor: " + e); return falla("motor"); }
+      if (this.cancelado) return falla("aborted");
+      let stream;
+      try { stream = await getUM(); } catch (_) { nota("micrófono negado"); return falla("not-allowed"); }
+      if (this.cancelado) { stream.getTracks().forEach(t => t.stop()); return falla("aborted"); }
+      this.stream = stream;
+      try { await this.ctx.resume(); } catch (_) {}
+      const frecuencia = this.ctx.sampleRate;
+      this._quitar = MotorLocal.escuchar(d => {
+        const ahora = performance.now();
+        if (d.t === "parcial") {
+          if (d.texto && d.texto !== this.parcial) { if (this.tPrimero == null) { this.tPrimero = ahora; nota("primer texto"); } this.tUltimo = ahora; this.ultimoFinal = false; }
+          this.parcial = d.texto || ""; if (this.activo && this.texto(true)) this.onText(this.texto(true));
+        } else if (d.t === "final") {
+          if (d.texto) { this.segs.push(d.texto); if (this.tPrimero == null) this.tPrimero = ahora; this.tUltimo = ahora; this.ultimoFinal = true; nota("final (" + this.segs.length + ")"); }
+          this.parcial = ""; if (this.activo && this.texto(true)) this.onText(this.texto(true));
+        } else if (d.t === "iniciado") {
+          nota("escuchando a " + frecuencia + " Hz");
+          const src = this.ctx.createMediaStreamSource(this.stream), nodo = this.ctx.createScriptProcessor(4096, 1, 1), mudo = this.ctx.createGain();
+          mudo.gain.value = 0; // el nodo debe estar conectado para funcionar, pero sin sonar por la bocina
+          nodo.onaudioprocess = ev => { if (!this.activo) return; const m = new Float32Array(ev.inputBuffer.getChannelData(0)); MotorLocal.enviar({ t: "audio", muestras: m, frecuencia }, [m.buffer]); };
+          src.connect(nodo); nodo.connect(mudo); mudo.connect(this.ctx.destination); this.nodo = nodo;
+          resolve();
+        } else if (d.t === "error") { nota("error: " + d.msg); this.err = "motor"; }
+        else if (d.t === "terminado" && this._fin) this._fin();
+      });
+      MotorLocal.enviar({ t: "iniciar", frecuencia });
+    });
+  }
+  texto(conParcial) { const p = this.segs.slice(); if (conParcial && this.parcial) p.push(this.parcial); return p.join(" ").trim(); }
+  resultado() {
+    const habla = this.tPrimero != null && this.tUltimo > this.tPrimero ? (this.tUltimo - this.tPrimero) / 1000 + 0.6 : null;
+    return { traza: (this.traza || []).slice(), text: this.texto(false), segs: this.segs.slice(), secs: (performance.now() - this.tIni) / 1000, hablaSecs: habla, error: this.err, motor: "local" };
+  }
+  _cerrarAudio() {
+    try { if (this.nodo) { this.nodo.onaudioprocess = null; this.nodo.disconnect(); } } catch (_) {}
+    if (this.stream) this.stream.getTracks().forEach(t => t.stop());
+    try { this.ctx && this.ctx.state !== "closed" && this.ctx.close(); } catch (_) {}
+    this.nodo = null; this.stream = null;
+  }
+  _soltar() { if (this._quitar) { this._quitar(); this._quitar = null; } if (AUDIO_ACTIVO.delete(this)) pantallaActiva(false); }
+  stop() {
+    if (this._parada) return this._parada;
+    return this._parada = new Promise(res => {
+      let listo = false;
+      const fin = () => { if (listo) return; listo = true; if (this.parcial) { this.segs.push(this.parcial); this.parcial = ""; } this._soltar(); res(this.resultado()); };
+      if (!this.activo) return fin();
+      this.activo = false; this._nota("stop"); this._cerrarAudio();
+      this._fin = fin; MotorLocal.enviar({ t: "fin", espera: 1200 });
+      setTimeout(fin, 4000); // por si el motor no contesta
+    });
+  }
+  abort() { this.cancelado = true; this.activo = false; this.alCerrar = null; this._cerrarAudio(); MotorLocal.enviar({ t: "cancelar" }); this._soltar(); }
+  cancelar() { this.abort(); }
+}
+
+// Las pantallas piden el reconocedor aquí; así se decide en un solo lugar cuál usar.
+const crearReconocedor = onText => (usarMotorLocal() ? new ReconocedorLocal(onText) : new Reconocedor(onText));

@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+<meta charset="UTF-8">
+<!-- Compartimento aislado para el reconocedor de voz Vosk. Solo aquí se permite lo que el motor
+     necesita (WebAssembly, su "worker" y evaluación dinámica); la app principal conserva su política estricta.
+     No se conecta a ningún otro sitio: connect-src 'self'. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; worker-src blob:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<title>Motor de voz</title>
+</head>
+<body>
+<script src="vosk.js"></script>
+<script src="motor.js"></script>
+</body>
+</html>

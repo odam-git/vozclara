@@ -47,6 +47,9 @@ Instálala desde Safari con **Compartir › Agregar a pantalla de inicio**.
 
 **Limitación comprobada en un iPhone real:** en la app instalada, el reconocimiento de voz de Apple solo funciona **una vez por cada apertura** de la app (las siguientes escuchas abren el micrófono pero no reciben sonido; no lo corrigen las pausas, la recarga ni la forma de cerrar la sesión). Por eso, en iPhone instalado la app mide con el **micrófono**: ritmo, tiempo hablando, pausas, volumen y tono, más grabación y autocalificación. La precisión palabra por palabra y las muletillas se miden en Android o computadora (Chrome). En Ajustes se puede encender la medición automática a sabiendas de esa limitación, y hay pruebas técnicas para diagnosticar otro teléfono.
 
+## Reconocedor de voz propio (experimental)
+En Ajustes se puede probar y encender un reconocedor que corre dentro del dispositivo (Vosk, en `vendor/`), sin depender de Apple ni de Google. Descarga unos 40 MB la primera vez y el audio no sale del equipo. Es la única dependencia de terceros del proyecto; ver `vendor/LICENCIAS.md`.
+
 ## Seguridad
 - Los respaldos importados se validan campo por campo: solo se aceptan datos conocidos y con el tipo esperado.
 - Política de seguridad de contenido (CSP) estricta: sin código en línea y sin conexiones a otros sitios.

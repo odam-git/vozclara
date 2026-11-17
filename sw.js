@@ -1,6 +1,6 @@
 // Service worker de Voz Clara: primero la red, y si no hay conexión, la copia guardada.
 // Sube VERSION cuando cambie la lista de archivos.
-const VERSION = "vozclara-v16";
+const VERSION = "vozclara-v17";
 const ARCHIVOS = [
   "./", "./index.html", "./manifest.json", "./icon.svg", "./apple-touch-icon.png", "./icon-192.png", "./icon-512.png", "./icon-maskable-512.png",
   "./js/datos.js", "./js/estado.js", "./js/voz.js", "./js/analisis.js", "./js/flujo.js", "./js/progreso.js", "./js/adaptativo.js", "./js/vistas.js", "./js/modulos.js", "./js/juridico.js", "./js/diagnostico.js", "./js/reporte.js", "./js/inicio.js",
@@ -17,6 +17,11 @@ self.addEventListener("activate", e => {
 self.addEventListener("fetch", e => {
   const req = e.request;
   if (req.method !== "GET" || new URL(req.url).origin !== location.origin) return;
+  // El reconocedor propio (vendor/, unos 40 MB) no cambia: se guarda una vez y después se sirve del dispositivo.
+  if (new URL(req.url).pathname.includes("/vendor/")) {
+    e.respondWith(caches.open(VERSION).then(c => c.match(req.url).then(hit => hit || fetch(req.url, { credentials: "same-origin" }).then(r => { if (r.ok && r.type === "basic") c.put(req.url, r.clone()); return r; }))));
+    return;
+  }
   e.respondWith(
     // "no-cache": siempre se pregunta al servidor si hay versión nueva (evita esperar 10 minutos tras publicar).
     fetch(req.url, { cache: "no-cache", credentials: "same-origin" }).then(r => {

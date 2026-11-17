@@ -12,7 +12,7 @@ El dueño del proyecto **no es programador**: explícale todo en lenguaje sencil
 
 - Todo en español de México. Móvil primero, modo claro y oscuro.
 - Datos solo en el dispositivo (`localStorage`, clave `vozclara.v1`), con exportar e importar respaldo.
-- Sin dependencias externas ni servidores. (Excepción en discusión, que requiere autorización del dueño: ver sección 7.1.)
+- Sin dependencias externas ni servidores. Única excepción, autorizada por el dueño: el reconocedor de voz Vosk en `vendor/` (sección 7.1).
 - Sin datos personales en el código ni en el historial de cambios.
 - Sin mecánicas que castiguen o hagan sentir culpa.
 - El reconocimiento de voz y el micrófono **nunca** se usan al mismo tiempo.
@@ -39,6 +39,7 @@ El dueño del proyecto **no es programador**: explícale todo en lenguaje sencil
 | `js/inicio.js` | Arranque |
 | `data/*.json` | Contenido: 400 trabalenguas, 30 lecturas, 30 temas, entonación, audiencias, argumentos, consejos |
 | `sw.js` | Funcionamiento sin conexión (primero la red, sin caché del navegador) |
+| `vendor/` | Reconocedor de voz propio opcional (Vosk) y su compartimento |
 | `tests/` | Pruebas automáticas |
 
 Los scripts son clásicos (no módulos) y comparten variables globales; el orden de carga en `index.html` importa.
@@ -84,7 +85,8 @@ Funciona y está publicado (versión 16):
 - Práctica jurídica: modo audiencia (penal y civil), construcción de argumentos (Toulmin, Perelman, MacCormick, Atienza), mis asuntos.
 
 **Sin confirmar en un teléfono real:**
-- La versión 16 en iPhone (solo se probó en simulación).
+- La medición con micrófono en iPhone (versión 16 en adelante; solo se probó en simulación).
+- El reconocedor propio (versión 17).
 - Toda la app en Android con Chrome (ahí debería funcionar la medición completa; nadie lo ha probado).
 
 ## 7. Pendientes
@@ -97,42 +99,28 @@ Funciona y está publicado (versión 16):
 6. **Borrar el repositorio anterior** `odam-git/voz-clara`, que conserva datos personales en su historial. Lo hace el dueño: Settings › Danger Zone › Delete this repository.
 7. Ideas sin empezar: materias mercantil y familiar en modo audiencia (se pidieron al inicio y quedaron fuera); hacer más exigentes las pausas y el énfasis.
 
-### 7.1 Reconocedor de voz propio: hasta dónde se llegó
+### 7.1 Reconocedor de voz propio (Vosk): estado
 
-**Objetivo:** medir precisión palabra por palabra y muletillas en iPhone instalado, muchas veces seguidas, sin depender del reconocimiento de Apple. La idea es un motor que corra dentro de la app y reciba el audio del micrófono directo (`getUserMedia`), que en ese iPhone nunca falló.
+**El dueño lo autorizó expresamente** como excepción a la regla de «sin dependencias». Está incorporado desde la versión 17 como opción **experimental**, apagada de fábrica.
 
-**Estado: NO está hecho ni probado.** Se localizaron las piezas, pero el entorno donde se trabajaba bloqueó su ejecución porque el dueño aún no había autorizado agregar dependencias. **Antes de empezar, pide al dueño su autorización expresa**: cambia la regla de «sin dependencias externas».
+Qué hay:
+- `vendor/vosk.js` (motor Vosk en WebAssembly, paquete npm `vosk-browser` 0.0.8) y `vendor/modelo-es.tar.gz` (modelo `vosk-model-small-es-0.3`, 34 MB). Licencias Apache 2.0; ver `vendor/LICENCIAS.md`.
+- `vendor/motor.html` + `vendor/motor.js`: un **compartimento aparte** (iframe del mismo origen) con su propia política de seguridad. El motor necesita `'unsafe-eval'` y WebAssembly; así la app principal conserva su política estricta sin cambios. La app y el compartimento se hablan con `postMessage`.
+- En `js/voz.js`: `MotorLocal` (carga el compartimento y el modelo), `ReconocedorLocal` (misma interfaz que `Reconocedor`; captura con `getUserMedia` + `ScriptProcessor` y envía el audio al motor) y `crearReconocedor()`, que decide cuál usar. `usarMotorLocal()` lee `ENV.motorLocal`.
+- En Ajustes: tarjeta «Reconocedor de voz propio (experimental)» con una prueba (acumula intentos para ver si funciona varias veces seguidas) y el interruptor para usarlo al medir.
+- `sw.js` guarda `vendor/` una sola vez (primero la copia guardada), para no volver a bajar 40 MB.
 
-Piezas localizadas (ambas con licencia Apache 2.0; verifica las licencias antes de publicar):
-- Motor: paquete de npm `vosk-browser` versión 0.0.8. El archivo útil es `dist/vosk.js` (unos 5.8 MB; trae dentro el WebAssembly y su «worker»). No usa `eval` ni `new Function`.
-- Modelo de español: `vosk-model-small-es-0.3.tar.gz` (unos 34 MB), que el propio proyecto vosk-browser publica en su rama `gh-pages`, carpeta `models/`. Hay modelos más recientes (0.42) en alphacephei.com/vosk/models, pero vienen en `.zip` y vosk-browser los necesita en `.tar.gz`.
+Qué se comprobó: en Chromium simulado el motor carga en unos 2 segundos, no viola la política de seguridad, admite varias sesiones seguidas y libera el micrófono.
 
-Forma de uso del motor (según su documentación):
-```js
-const modelo = await Vosk.createModel(urlAbsolutaDelModelo);   // tarda: descarga y prepara 34 MB
-const rec = new modelo.KaldiRecognizer(frecuenciaDeMuestreo);
-rec.on("partialresult", m => m.result.partial);                // texto provisional
-rec.on("result", m => m.result.text);                          // texto final de una frase
-rec.acceptWaveform(audioBuffer);                               // o acceptWaveformFloat(float32, frecuencia)
-rec.retrieveFinalResult();                                     // al terminar
-```
+**Qué NO se ha comprobado (lo más importante):**
+- Que **entienda una voz real en español**. En el entorno de desarrollo no había forma de hablarle; con el tono de prueba devuelve texto vacío, como es de esperar.
+- Que funcione en **iPhone instalado**: tiempo de carga, memoria, y si `ScriptProcessor` entrega audio ahí.
+- Su precisión con trabalenguas. El modelo es pequeño; es probable que reconozca peor que Apple o Google, y entonces la «precisión» mediría en parte errores del motor.
 
-Diseño propuesto (sin implementar):
-- Guardar los dos archivos dentro del repositorio (por ejemplo en `vendor/`), con un archivo de licencias. GitHub Pages acepta archivos de hasta 100 MB.
-- Cargarlos **solo si el usuario lo enciende** en Ajustes («Reconocedor propio, experimental»), para no obligar a nadie a bajar 40 MB.
-- Crear una clase `ReconocedorLocal` con la **misma interfaz** que `Reconocedor` en `js/voz.js` (`start()`, `stop()`, `abort()`, `onText`, y un resultado con `text`, `segs`, `secs`, `hablaSecs`, `error`, `traza`), para que `js/flujo.js`, `js/diagnostico.js` y `js/juridico.js` no cambien. Elegir cuál usar desde una sola función.
-- Debe anotarse en `AUDIO_ACTIVO` como cualquier otro uso de audio, y crear el `AudioContext` dentro del toque del usuario (iOS lo exige).
-- La política de seguridad (CSP) de `index.html` tendría que permitir WebAssembly y el «worker»: añadir `'wasm-unsafe-eval'` a `script-src` y `blob:` a `worker-src`. Compruébalo en el navegador: es una estimación, no se llegó a probar.
-- El modelo debe pedirse con dirección absoluta (el «worker» no resuelve direcciones relativas).
-- `sw.js` no debe precargar los 40 MB; basta con que queden guardados tras la primera descarga.
-
-Riesgos que hay que decirle al dueño con claridad:
-- No se sabe si funciona en iPhone instalado: puede ser lento, agotar la memoria o tardar mucho en cargar.
-- El modelo pequeño reconoce peor que Apple o Google, y los trabalenguas son un caso difícil. La «precisión» mediría en parte los errores del motor.
-- No se pudo medir aquí su calidad en español.
-- Primer paso sensato: una **prueba aislada** en Ajustes (como las pruebas técnicas existentes) que cargue el motor, escuche 8 segundos y muestre el texto y el tiempo de carga. Solo si el dueño la aprueba en su iPhone conviene conectarlo al resto de la app.
-
-Alternativa si el motor propio no sirve: dejar el iPhone como está (versión 16) y usar Android o computadora para la medición completa.
+Siguiente paso: que el dueño toque tres veces «Probar» en Ajustes desde su iPhone y mande la captura. Según el resultado:
+- Si oye bien y repetidamente: encender el interruptor y probar Articulación, Lectura y el diagnóstico.
+- Si carga pero no entiende: revisar la frecuencia de muestreo que se envía (`ctx.sampleRate`) y si conviene remuestrear a 16 kHz antes de mandar el audio; probar un modelo más reciente (0.42, hay que convertirlo de `.zip` a `.tar.gz`).
+- Si no carga o agota la memoria: descartarlo y dejar el iPhone como en la versión 16.
 
 ## 8. Cómo publicar un cambio
 
