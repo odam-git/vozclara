@@ -420,7 +420,7 @@ class ReconocedorLocal {
       this.s = ++SESION_LOCAL;
       this.segs = []; this.parcial = ""; this.err = null; this.traza = []; this.activo = true; this.ultimoFinal = false;
       this.tIni = performance.now(); this.tPrimero = null; this.tUltimo = null;
-      this.bloques = 0; this.picoDb = -100; this.nParciales = 0;
+      this.bloques = 0; this.picoDb = -100; this.nParciales = 0; this._dicho = "";
       const nota = e => this.traza.length < 60 && this.traza.push(((performance.now() - this.tIni) / 1000).toFixed(1) + "s " + e);
       this._nota = nota;
       try { this.ctx = contextoLocal(); } catch (_) { this._soltar(); return reject("sin-inicio"); } // dentro del toque
@@ -445,10 +445,10 @@ class ReconocedorLocal {
         if (d.t === "parcial") {
           this.nParciales++;
           if (d.texto && d.texto !== this.parcial) { if (this.tPrimero == null) { this.tPrimero = ahora; nota("primer texto"); } this.tUltimo = ahora; this.ultimoFinal = false; }
-          this.parcial = d.texto || ""; if (this.activo && this.texto(true)) this.onText(this.texto(true));
+          this.parcial = d.texto || ""; this._avisar();
         } else if (d.t === "final") {
           if (d.texto) { this.segs.push(d.texto); if (this.tPrimero == null) this.tPrimero = ahora; this.tUltimo = ahora; this.ultimoFinal = true; nota("final (" + this.segs.length + ")"); }
-          this.parcial = ""; if (this.activo && this.texto(true)) this.onText(this.texto(true));
+          this.parcial = ""; this._avisar();
         } else if (d.t === "iniciado") {
           if (abandonado() || !this.stream) return this._abandonar();
           const conv = new Remuestreador(entrada, d.frecuencia || 16000);
@@ -471,6 +471,9 @@ class ReconocedorLocal {
       MotorLocal.enviar({ t: "iniciar", s: this.s });
     });
   }
+  // El motor contesta varias veces por segundo aunque nada cambie: solo se avisa cuando cambia el texto
+  // (si no, el paro automático nunca ve silencio).
+  _avisar() { const t = this.texto(true); if (this.activo && t && t !== this._dicho) { this._dicho = t; this.onText(t); } }
   texto(conParcial) { const p = this.segs.slice(); if (conParcial && this.parcial) p.push(this.parcial); return p.join(" ").trim(); }
   resultado() {
     const habla = this.tPrimero != null && this.tUltimo > this.tPrimero ? (this.tUltimo - this.tPrimero) / 1000 + 0.6 : null;

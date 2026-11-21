@@ -343,3 +343,12 @@ test("reconocedor propio: convierte 48 kHz y 44.1 kHz a 16 kHz sin perder ni dup
     const y = c.procesar(x); let k = 0; for (let i = 1; i < y.length; i++) if ((y[i - 1] < 0) !== (y[i] < 0)) k++; return k; })()`);
   assert.ok(Math.abs(cruces - 400) <= 4, "cruces por cero: " + cruces);
 });
+
+test("Reconocedor propio: solo avisa cuando cambia el texto (si no, el paro automático nunca ve silencio)", () => {
+  const a = cargar();
+  const r = a.ev(`(() => { const vistos = []; const r = new ReconocedorLocal(t => vistos.push(t)); r.activo = true; r.segs = []; r.parcial = ""; r._dicho = "";
+    for (const p of ["chucho", "chucho", "chucho", "chucho come"]) { r.parcial = p; r._avisar(); }
+    r.segs.push("chucho come"); r.parcial = ""; r._avisar();
+    return vistos; })()`);
+  assert.deepEqual([...r], ["chucho", "chucho come"]);
+});
