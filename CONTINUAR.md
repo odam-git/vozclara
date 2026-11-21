@@ -79,7 +79,7 @@ Otros datos:
 
 ## 6. Estado actual
 
-Funciona y está publicado (versión 20):
+Funciona y está publicado (versión 21):
 - Bienvenida, diagnóstico, rutina diaria, progresión adaptativa, reporte semanal, rachas con comodines, 21 logros, recordatorio de calendario, respaldo.
 - Módulos: respiración, canto, articulación, lectura, improvisación, proyección, entonación, pausas.
 - Práctica jurídica: modo audiencia (penal y civil), construcción de argumentos (Toulmin, Perelman, MacCormick, Atienza), mis asuntos.
@@ -114,7 +114,7 @@ Qué hay:
 
 **Segunda prueba (versión 18, diagnóstico):** la carga tardó más de un minuto y «Terminé» no cerraba. Causa: el botón ya decía «Terminé» mientras el motor cargaba; al tocarlo, la sesión se cerraba pero la carga seguía y al terminar abría el micrófono por su cuenta (micrófono «huérfano»), lo que además trababa al medidor. Versión 19: el botón queda en «Cargando el reconocedor…» hasta que de verdad escucha (`mientrasCarga` en `js/voz.js`); si se detiene o se sale antes, la sesión se abandona sin abrir el micrófono (`_abandonar`); el motor se precarga en segundo plano al abrir la app si está encendido (`precargarMotor`); el contexto de audio del motor se pausa entre sesiones; el medidor ya no espera para siempre a que el audio arranque, y en el diagnóstico sin reconocimiento el botón no admite doble toque mientras se abre el micrófono.
 
-**Tercera prueba (versión 20): FUNCIONA en el iPhone instalado.** El dueño completó las cuatro etapas del diagnóstico con medición (171 ppm, 77 % de claridad, precisión por sonido). Dos observaciones: (1) el paro automático de los trabalenguas no se activaba, porque el motor contesta varias veces por segundo aunque el texto no cambie y eso reiniciaba el contador de silencio; la versión 20 solo avisa cuando el texto cambia (`_avisar`). (2) El modelo pequeño confunde algunas palabras («chucho» → «cuco»), lo que baja la precisión sin que sea culpa del hablante. Idea pendiente de aprobación del dueño: restringir el reconocimiento a las palabras del texto objetivo (gramática de Vosk, `KaldiRecognizer(16000, JSON.stringify([...palabras, "[unk]"]))`); acierta más, pero puede ser indulgente con una palabra mal dicha.
+**Tercera prueba (versión 21): FUNCIONA en el iPhone instalado.** El dueño completó las cuatro etapas del diagnóstico con medición (171 ppm, 77 % de claridad, precisión por sonido). Dos observaciones: (1) el paro automático de los trabalenguas no se activaba, porque el motor contesta varias veces por segundo aunque el texto no cambie y eso reiniciaba el contador de silencio; la versión 20 solo avisa cuando el texto cambia (`_avisar`). (2) El modelo pequeño confunde algunas palabras («chucho» → «cuco»), lo que baja la precisión sin que sea culpa del hablante. Versión 21 (aprobada por el dueño): **palabras esperadas**. En trabalenguas, lectura y diagnóstico el reconocedor propio solo busca entre las palabras del texto objetivo (gramática de Vosk: `gramaticaDe()` en `js/voz.js`; en `vendor/motor.js` hay un reconocedor libre que se reutiliza y otro limitado que se rehace solo cuando cambia la lista). Encendido de fábrica, con interruptor en Ajustes (`ENV.gramatica`). Acierta más, pero es más generoso con una palabra dicha a medias. Sin confirmar en el iPhone; en Chromium alterna sesiones libres y limitadas sin errores.
 
 Qué se comprobó: en Chromium simulado el motor carga en unos 2 segundos, no viola la política de seguridad, admite varias sesiones seguidas y libera el micrófono.
 

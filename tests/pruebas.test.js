@@ -352,3 +352,10 @@ test("Reconocedor propio: solo avisa cuando cambia el texto (si no, el paro auto
     return vistos; })()`);
   assert.deepEqual([...r], ["chucho", "chucho come"]);
 });
+
+test("Palabras esperadas: lista sin repetir, con acentos, números en letra y [unk]; se puede apagar", () => {
+  const a = cargar();
+  assert.deepEqual(JSON.parse(a.ev(`gramaticaDe("El chucho, ¡el CHUCHO! comió 2 ñoquis.")`)), ["el", "chucho", "comió", "dos", "ñoquis", "[unk]"]);
+  assert.equal(a.ev(`gramaticaDe("")`), null);
+  assert.equal(a.ev(`ENV.gramatica = false, gramaticaDe("hola")`), null);
+});

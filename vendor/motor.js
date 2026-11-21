@@ -12,14 +12,22 @@
     if (!cargando) cargando = Vosk.createModel(new URL("modelo-es.tar.gz", location.href).href).then(function (m) { modelo = m; return m; });
     return cargando;
   }
-  function reconocedor(m) {
-    if (rec) return rec;
-    rec = new m.KaldiRecognizer(FREC);
+  // Dos reconocedores como máximo: uno libre (se reutiliza siempre) y otro limitado a las palabras
+  // del ejercicio actual (se rehace solo cuando cambia la lista).
+  var libre = null, limitado = null, listaActual = null;
+  function crear(m, gramatica) {
+    var r = gramatica ? new m.KaldiRecognizer(FREC, gramatica) : new m.KaldiRecognizer(FREC);
     // Cada mensaje lleva la sesión vigente: la app descarta lo que llegue tarde de una sesión anterior.
-    rec.on("partialresult", function (x) { if (sesion) avisar({ t: "parcial", s: sesion, texto: (x && x.result && x.result.partial) || "" }); });
-    rec.on("result", function (x) { if (sesion) avisar({ t: "final", s: sesion, texto: (x && x.result && x.result.text) || "" }); });
-    rec.on("error", function (x) { avisar({ t: "error", s: sesion, msg: msg(x) }); });
-    return rec;
+    r.on("partialresult", function (x) { if (sesion && rec === r) avisar({ t: "parcial", s: sesion, texto: (x && x.result && x.result.partial) || "" }); });
+    r.on("result", function (x) { if (sesion && rec === r) avisar({ t: "final", s: sesion, texto: (x && x.result && x.result.text) || "" }); });
+    r.on("error", function (x) { avisar({ t: "error", s: sesion, msg: msg(x) }); });
+    return r;
+  }
+  function reconocedor(m, gramatica) {
+    if (!gramatica) return libre || (libre = crear(m, null));
+    if (limitado && listaActual === gramatica) return limitado;
+    if (limitado) { try { limitado.remove(); } catch (_) {} }
+    listaActual = gramatica; return limitado = crear(m, gramatica);
   }
   window.addEventListener("message", function (e) {
     if (e.origin !== location.origin || e.source !== parent) return; // solo la app que lo contiene
@@ -27,7 +35,7 @@
     if (d.t === "cargar") {
       cargar().then(function () { avisar({ t: "listo" }); }).catch(function (err) { cargando = null; avisar({ t: "error", msg: msg(err) }); });
     } else if (d.t === "iniciar") {
-      cargar().then(function (m) { reconocedor(m); sesion = d.s; avisar({ t: "iniciado", s: d.s, frecuencia: FREC }); })
+      cargar().then(function (m) { rec = reconocedor(m, d.gramatica || null); sesion = d.s; avisar({ t: "iniciado", s: d.s, frecuencia: FREC, gramatica: !!d.gramatica }); })
         .catch(function (err) { cargando = null; avisar({ t: "error", s: d.s, msg: msg(err) }); });
     } else if (d.t === "audio") {
       if (rec && sesion === d.s) { try { rec.acceptWaveformFloat(d.muestras, FREC); } catch (err) { avisar({ t: "error", s: d.s, msg: msg(err) }); } }

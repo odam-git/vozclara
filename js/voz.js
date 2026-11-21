@@ -411,8 +411,18 @@ function contextoLocal() {
 }
 
 // Misma interfaz que Reconocedor, para que las pantallas no distingan cuál se usa.
+// «Palabras esperadas»: el reconocedor propio solo busca entre las palabras del texto que se va a leer.
+// Acierta mucho más con palabras raras (trabalenguas), a cambio de ser algo más generoso. Encendido de fábrica.
+const usarGramatica = () => ENV.gramatica !== false;
+function gramaticaDe(texto) {
+  if (!texto || !usarGramatica()) return null;
+  const t = String(texto).toLowerCase().replace(/\d+/g, m => " " + (typeof numALetras === "function" ? numALetras(parseInt(m, 10)) : m) + " ");
+  const lista = [...new Set(t.replace(/[^a-záéíóúüñ\s]/g, " ").split(/\s+/).filter(Boolean))];
+  return lista.length ? JSON.stringify([...lista, "[unk]"]) : null;
+}
+
 class ReconocedorLocal {
-  constructor(onText) { this.onText = onText || (() => {}); }
+  constructor(onText, op = {}) { this.onText = onText || (() => {}); this.gramatica = gramaticaDe(op.objetivo); }
   start() {
     return new Promise(async (resolve, reject) => {
       if (AUDIO_ACTIVO.size) return reject("ocupado");
@@ -463,12 +473,12 @@ class ReconocedorLocal {
             if (m.length) MotorLocal.enviar({ t: "audio", s: this.s, muestras: m }, [m.buffer]);
           };
           src.connect(nodo); nodo.connect(mudo); mudo.connect(this.ctx.destination); this.src = src; this.nodo = nodo; this.mudo = mudo;
-          nota("escuchando (convierto a " + (d.frecuencia || 16000) + " Hz)");
+          nota("escuchando (convierto a " + (d.frecuencia || 16000) + " Hz" + (d.gramatica ? ", con palabras esperadas" : "") + ")");
           this.listo = true; resolve();
         } else if (d.t === "error") { nota("error del motor: " + String(d.msg).slice(0, 80)); this.err = "motor"; }
         else if (d.t === "terminado" && this._fin) this._fin();
       });
-      MotorLocal.enviar({ t: "iniciar", s: this.s });
+      MotorLocal.enviar({ t: "iniciar", s: this.s, gramatica: this.gramatica });
     });
   }
   // El motor contesta varias veces por segundo aunque nada cambie: solo se avisa cuando cambia el texto
@@ -517,4 +527,5 @@ function mientrasCarga(boton, inicio) {
 function precargarMotor() { if (usarMotorLocal() && MotorLocal.estado !== "listo") MotorLocal.cargar().catch(() => {}); }
 
 // Las pantallas piden el reconocedor aquí; así se decide en un solo lugar cuál usar.
-const crearReconocedor = onText => (usarMotorLocal() ? new ReconocedorLocal(onText) : new Reconocedor(onText));
+// op.objetivo: texto que se va a leer (si lo hay), para las «palabras esperadas» del reconocedor propio.
+const crearReconocedor = (onText, op) => (usarMotorLocal() ? new ReconocedorLocal(onText, op) : new Reconocedor(onText));

@@ -1,5 +1,5 @@
 // ====== UI ======
-const VERSION_APP = "20"; // súbela junto con VERSION en sw.js
+const VERSION_APP = "21"; // súbela junto con VERSION en sw.js
 const $ = s => document.querySelector(s);
 function toast(m) {
   let box = $("#toasts");
@@ -264,7 +264,10 @@ const VIEWS = {
     <p class="sub">Tócalo <b>tres veces</b> (espera a que termine cada una) y manda una captura del recuadro.</p>
     <pre id="ml-out" class="tecnico" aria-live="polite"></pre>
     <button class="btn ${usarMotorLocal() ? "sec" : ""}" id="ml-on">${usarMotorLocal() ? "Dejar de usar el reconocedor propio" : "Usar el reconocedor propio para medir"}</button>
-    <p class="sub">${usarMotorLocal() ? "✅ Encendido: <b>Medir</b> usa el reconocedor propio." : "Apagado: se usa el reconocimiento del navegador (o el micrófono en iPhone instalado)."}</p></div>
+    <p class="sub">${usarMotorLocal() ? "✅ Encendido: <b>Medir</b> usa el reconocedor propio." : "Apagado: se usa el reconocimiento del navegador (o el micrófono en iPhone instalado)."}</p>
+    ${usarMotorLocal() ? `<h3>Palabras esperadas</h3><p>En trabalenguas, lectura y diagnóstico, el reconocedor solo busca entre las palabras del texto. Así no confunde palabras raras («chucho» con «cuco»), pero es <b>más generoso</b>: una palabra dicha a medias puede contar como buena. Saltarte palabras o trabarte sí se nota.</p>
+    <button class="btn sec" id="ml-gr">${usarGramatica() ? "Apagar palabras esperadas" : "Encender palabras esperadas"}</button>
+    <p class="sub">${usarGramatica() ? "✅ Encendido (recomendado con este reconocedor)." : "Apagado: el reconocedor busca entre todas las palabras del español."}</p>` : ""}</div>
     <button class="btn sec" id="act">🔄 Buscar actualización</button>
     <p class="sub" style="text-align:center">Voz Clara · versión ${VERSION_APP}</p>`;
     $("#sv").onclick = () => { S.settings.name = $("#nm").value.trim().slice(0, 40); S.settings.focus = $("#fc").value; S.settings.hour = $("#hr").value || "07:30"; save(); greet(); toast("Guardado"); };
@@ -282,6 +285,7 @@ const VIEWS = {
     pruebaTecnica();
     pruebaMotorLocal();
     $("#ml-on").onclick = () => { ENV.motorLocal = !usarMotorLocal(); saveEnv(); precargarMotor(); toast(ENV.motorLocal ? "Reconocedor propio encendido" : "Reconocedor propio apagado"); go("ajustes"); };
+    if ($("#ml-gr")) $("#ml-gr").onclick = () => { ENV.gramatica = !usarGramatica(); saveEnv(); toast(ENV.gramatica ? "Palabras esperadas encendidas" : "Palabras esperadas apagadas"); go("ajustes"); };
     if ($("#fsr")) $("#fsr").onclick = () => { ENV.forzarSR = !ENV.forzarSR; if (ENV.srFalla) delete ENV.srFalla[modoApp()]; saveEnv(); toast(ENV.forzarSR ? "Medición automática encendida" : "Medición automática apagada"); go("ajustes"); };
     // Fuerza la descarga de la versión más reciente (no toca el historial, que vive aparte).
     $("#act").onclick = async () => {

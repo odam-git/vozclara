@@ -23,7 +23,7 @@ function medirYEscuchar(cfg) {
     if (bMed) bMed.onclick = async () => {
       if (ocupado) return;
       if (!rec) {
-        rec = crearReconocedor(t => { q("tr").textContent = t; });
+        rec = crearReconocedor(t => { q("tr").textContent = t; }, { objetivo: cfg.objetivo });
         const p = rec.start(); // sin await previo: iOS exige el gesto
         bEsc.disabled = true; bMed.textContent = "⏹️ Detener"; bMed.className = "btn rec";
         q("res").innerHTML = ""; q("aud").innerHTML = ""; q("tr").textContent = "Preparando…"; mientrasCarga(bMed, p);
