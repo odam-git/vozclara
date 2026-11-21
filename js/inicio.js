@@ -29,6 +29,7 @@ function arrancar() {
   // Regreso de una recarga hecha por la prueba técnica 5.
   let volver = false; try { volver = sessionStorage.getItem("vc.volverAjustes") === "1"; sessionStorage.removeItem("vc.volverAjustes"); } catch (_) {}
   go(volver ? "ajustes" : "hoy");
+  setTimeout(precargarMotor, 1500); // el reconocedor propio tarda en cargar: se adelanta en segundo plano
   if ("Notification" in window && Notification.permission === "granted" && !S.days[today()]) {
     const [h, m] = S.settings.hour.split(":").map(Number), n = new Date();
     if (n.getHours() * 60 + n.getMinutes() >= h * 60 + m && S.lastNotif !== today()) {

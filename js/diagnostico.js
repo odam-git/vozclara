@@ -79,14 +79,16 @@ VIEWS.diag = function () {
       if (D.modo === "medido") {
         if (rec) { b.disabled = true; b.textContent = "Procesando…"; const r = await rec.stop(); rec = null; parar && parar(); if (!vivo) return; if (!r.text) return sinTexto(r, paso2, paso2); vacios = 0; return finLectura(r); }
         rec = crearReconocedor(t => { $("#tr").textContent = t; }); const p = rec.start();
-        b.textContent = "⏹️ Terminé"; b.className = "btn rec";
+        b.textContent = "⏹️ Terminé"; b.className = "btn rec"; mientrasCarga(b, p);
         try { await p; } catch (e) { rec = null; if (SR_FATAL.includes(e)) marcarFallaSR(e); D.modo = "auto"; toast("No se pudo medir con reconocimiento; sigo con el medidor."); return paso2(); }
         { const actual = rec; rec.alCerrar = () => { if (vivo && rec === actual) b.click(); }; rec.alSordo = () => { const t = $("#tr"); if (t && vivo && rec === actual) t.textContent = "⚠️ Aún no detecto tu voz. Si ya hablaste, toca el botón rojo y vuelve a intentar."; }; } $("#tr").textContent = "🎙️ Escuchando… lee ahora."; parar = autoParo(rec, () => b.click(), 2600); // en lectura se permiten pausas largas
       } else {
         if (ses) return ses.terminar();
+        if (b.dataset.abriendo) return; // el micrófono aún se está abriendo
+        b.dataset.abriendo = "1"; b.disabled = true;
         b.textContent = "⏹️ Terminé"; b.className = "btn rec"; $("#d-m").textContent = "Silencio un instante y lee…";
-        try { ses = await sesionMic({ maxSeg: 60, silencioFin: 2.5, alFin: r => { ses = null; if (!vivo) return; const v = r.frames.filter(f => f.voz); finLectura(null, v.length ? v[v.length - 1].t - v[0].t : null); } }); }
-        catch (_) { ses = null; b.textContent = "Intentar de nuevo"; b.className = "btn"; $("#d-m").innerHTML = 'Sin micrófono no puedo medir el ritmo. <button class="btn sec" id="d-sk">Omitir esta prueba</button>'; $("#d-sk").onclick = () => finLectura(null, null); }
+        try { ses = await sesionMic({ maxSeg: 60, silencioFin: 2.5, alFin: r => { ses = null; if (!vivo) return; const v = r.frames.filter(f => f.voz); finLectura(null, v.length ? v[v.length - 1].t - v[0].t : null); } }); delete b.dataset.abriendo; b.disabled = false; }
+        catch (_) { ses = null; delete b.dataset.abriendo; b.disabled = false; b.textContent = "Intentar de nuevo"; b.className = "btn"; $("#d-m").innerHTML = 'Sin micrófono no puedo medir el ritmo. <button class="btn sec" id="d-sk">Omitir esta prueba</button>'; $("#d-sk").onclick = () => finLectura(null, null); }
       }
     };
     function finLectura(r, dur) {
@@ -116,7 +118,7 @@ VIEWS.diag = function () {
           const ok = lcsMatch(tw.t, r.text), acc = Math.round(ok.filter(Boolean).length / ok.length * 100);
           $("#tg").innerHTML = `${acc}% <span class="sub">de precisión</span>`; setTimeout(() => vivo && sig(acc), 700); return; }
         rec = crearReconocedor(t => { $("#tr").textContent = t; }); const p = rec.start();
-        b.textContent = "⏹️ Listo"; b.className = "btn rec";
+        b.textContent = "⏹️ Listo"; b.className = "btn rec"; mientrasCarga(b, p);
         try { await p; } catch (e) { rec = null; if (SR_FATAL.includes(e)) marcarFallaSR(e); D.modo = "auto"; toast("Sin reconocimiento: sigo con autocalificación."); return pinta(); }
         { const actual = rec; rec.alCerrar = () => { if (vivo && rec === actual) b.click(); }; rec.alSordo = () => { const t = $("#tr"); if (t && vivo && rec === actual) t.textContent = "⚠️ Aún no detecto tu voz. Si ya hablaste, toca el botón rojo y vuelve a intentar."; }; } $("#tr").textContent = "🎙️ Escuchando… lee ahora. Se detiene solo."; parar = autoParo(rec, () => b.click());
       };
@@ -145,7 +147,7 @@ VIEWS.diag = function () {
           const dur = r.hablaSecs || r.secs, w = palabras(r.text).length, m = countMuletillas(r.segs);
           D.mulMin = dur >= 10 ? +(m.c / (dur / 60)).toFixed(1) : null; D.imWpm = dur >= 10 ? Math.round(w / (dur / 60)) : null; return paso1(); }
         rec = crearReconocedor(t => { $("#tr").textContent = t; }); const p = rec.start();
-        b.textContent = "⏹️ Terminar"; b.className = "btn rec";
+        b.textContent = "⏹️ Terminar"; b.className = "btn rec"; mientrasCarga(b, p);
         try { await p; } catch (e) { rec = null; D.modo = "auto"; return paso4(); }
         { const actual = rec; rec.alCerrar = () => { if (vivo && rec === actual) b.click(); }; rec.alSordo = () => { const t = $("#tr"); if (t && vivo && rec === actual) t.textContent = "⚠️ Aún no detecto tu voz. Si ya hablaste, toca el botón rojo y vuelve a intentar."; }; }
         $("#tr").textContent = "🎙️ Escuchando… habla ahora.";

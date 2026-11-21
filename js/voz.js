@@ -274,7 +274,7 @@ class Medidor {
     if (this.cancelado) { stream.getTracks().forEach(t => t.stop()); this._cerrarCtx(); return NUNCA(); }
     this.stream = stream;
     if (this.ctx) {
-      try { await this.ctx.resume(); } catch (_) {}
+      try { await Promise.race([this.ctx.resume(), new Promise(r => setTimeout(r, 1500))]); } catch (_) {} // en iPhone puede no contestar nunca
       const src = this.ctx.createMediaStreamSource(this.stream);
       this.an = this.ctx.createAnalyser(); this.an.fftSize = 2048; this.an.smoothingTimeConstant = 0;
       src.connect(this.an);
@@ -428,13 +428,15 @@ class ReconocedorLocal {
       try {
         if (MotorLocal.estado !== "listo") { nota("cargando motor"); this.onText("Cargando el reconocedor…"); }
         await MotorLocal.cargar(); nota("motor listo");
-      } catch (e) { nota("error motor: " + e); return falla("motor"); }
-      if (this.cancelado) return falla("aborted");
+      } catch (e) { nota("error motor: " + e); if (this.cancelado || this._parada) return this._abandonar(); return falla("motor"); }
+      // Si tocaron «Terminé» o salieron de la pantalla mientras cargaba, no se abre el micrófono.
+      const abandonado = () => this.cancelado || this._parada;
+      if (abandonado()) return this._abandonar();
       let stream;
-      try { stream = await getUM(); } catch (_) { nota("micrófono negado"); return falla("not-allowed"); }
-      if (this.cancelado) { stream.getTracks().forEach(t => t.stop()); return falla("aborted"); }
+      try { stream = await getUM(); } catch (_) { nota("micrófono negado"); if (abandonado()) return this._abandonar(); return falla("not-allowed"); }
+      if (abandonado()) { stream.getTracks().forEach(t => t.stop()); return this._abandonar(); }
       this.stream = stream;
-      try { await this.ctx.resume(); } catch (_) {}
+      try { await Promise.race([this.ctx.resume(), new Promise(r => setTimeout(r, 1500))]); } catch (_) {}
       const entrada = this.ctx.sampleRate;
       nota("audio " + entrada + " Hz, " + this.ctx.state);
       this._quitar = MotorLocal.escuchar(d => {
@@ -448,6 +450,7 @@ class ReconocedorLocal {
           if (d.texto) { this.segs.push(d.texto); if (this.tPrimero == null) this.tPrimero = ahora; this.tUltimo = ahora; this.ultimoFinal = true; nota("final (" + this.segs.length + ")"); }
           this.parcial = ""; if (this.activo && this.texto(true)) this.onText(this.texto(true));
         } else if (d.t === "iniciado") {
+          if (abandonado() || !this.stream) return this._abandonar();
           const conv = new Remuestreador(entrada, d.frecuencia || 16000);
           const src = this.ctx.createMediaStreamSource(this.stream), nodo = this.ctx.createScriptProcessor(4096, 1, 1), mudo = this.ctx.createGain();
           mudo.gain.value = 0; // el nodo debe estar conectado para funcionar, pero sin sonar por la bocina
@@ -461,7 +464,7 @@ class ReconocedorLocal {
           };
           src.connect(nodo); nodo.connect(mudo); mudo.connect(this.ctx.destination); this.src = src; this.nodo = nodo; this.mudo = mudo;
           nota("escuchando (convierto a " + (d.frecuencia || 16000) + " Hz)");
-          resolve();
+          this.listo = true; resolve();
         } else if (d.t === "error") { nota("error del motor: " + String(d.msg).slice(0, 80)); this.err = "motor"; }
         else if (d.t === "terminado" && this._fin) this._fin();
       });
@@ -478,15 +481,20 @@ class ReconocedorLocal {
     try { if (this.nodo) { this.nodo.onaudioprocess = null; this.nodo.disconnect(); } } catch (_) {}
     try { this.src && this.src.disconnect(); this.mudo && this.mudo.disconnect(); } catch (_) {}
     if (this.stream) this.stream.getTracks().forEach(t => t.stop());
-    this.nodo = this.src = this.mudo = null; this.stream = null; // el contexto se conserva para la siguiente sesión
+    this.nodo = this.src = this.mudo = null; this.stream = null;
+    // El contexto se conserva para la siguiente sesión, pero en pausa: así no estorba al medidor.
+    try { CTX_LOCAL && CTX_LOCAL.state === "running" && CTX_LOCAL.suspend(); } catch (_) {}
   }
   _soltar() { if (this._quitar) { this._quitar(); this._quitar = null; } if (AUDIO_ACTIVO.delete(this)) pantallaActiva(false); }
+  // Abandono silencioso: libera todo y deja la promesa de start() sin terminar (la pantalla ya siguió).
+  _abandonar() { this.activo = false; this._cerrarAudio(); MotorLocal.enviar({ t: "cancelar", s: this.s }); this._soltar(); }
   stop() {
     if (this._parada) return this._parada;
     return this._parada = new Promise(res => {
       let listo = false;
       const fin = () => { if (listo) return; listo = true; if (this.parcial) { this.segs.push(this.parcial); this.parcial = ""; } this._soltar(); res(this.resultado()); };
       if (!this.activo) return fin();
+      if (!this.listo) { this._nota("stop antes de escuchar"); this._abandonar(); return fin(); } // aún cargaba: nada que esperar
       this.activo = false; this._nota("stop"); this._cerrarAudio();
       this._fin = fin; MotorLocal.enviar({ t: "fin", s: this.s, espera: 1200 });
       setTimeout(fin, 4000); // por si el motor no contesta
@@ -495,6 +503,15 @@ class ReconocedorLocal {
   abort() { this.cancelado = true; this.activo = false; this.alCerrar = null; this._cerrarAudio(); MotorLocal.enviar({ t: "cancelar", s: this.s }); this._soltar(); }
   cancelar() { this.abort(); }
 }
+
+// Mientras carga el reconocedor propio, el botón queda en espera: así nadie toca «Terminé» antes de tiempo.
+function mientrasCarga(boton, inicio) {
+  if (!boton || !usarMotorLocal() || MotorLocal.estado === "listo") return;
+  const texto = boton.textContent; boton.disabled = true; boton.textContent = "⏳ Cargando el reconocedor…";
+  Promise.resolve(inicio).catch(() => {}).then(() => { if (boton.isConnected && boton.textContent === "⏳ Cargando el reconocedor…") { boton.disabled = false; boton.textContent = texto; } });
+}
+// Precarga en segundo plano (al abrir la app o al encender el reconocedor propio).
+function precargarMotor() { if (usarMotorLocal() && MotorLocal.estado !== "listo") MotorLocal.cargar().catch(() => {}); }
 
 // Las pantallas piden el reconocedor aquí; así se decide en un solo lugar cuál usar.
 const crearReconocedor = onText => (usarMotorLocal() ? new ReconocedorLocal(onText) : new Reconocedor(onText));

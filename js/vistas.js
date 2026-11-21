@@ -1,5 +1,5 @@
 // ====== UI ======
-const VERSION_APP = "18"; // súbela junto con VERSION en sw.js
+const VERSION_APP = "19"; // súbela junto con VERSION en sw.js
 const $ = s => document.querySelector(s);
 function toast(m) {
   let box = $("#toasts");
@@ -281,7 +281,7 @@ const VIEWS = {
     };
     pruebaTecnica();
     pruebaMotorLocal();
-    $("#ml-on").onclick = () => { ENV.motorLocal = !usarMotorLocal(); saveEnv(); toast(ENV.motorLocal ? "Reconocedor propio encendido" : "Reconocedor propio apagado"); go("ajustes"); };
+    $("#ml-on").onclick = () => { ENV.motorLocal = !usarMotorLocal(); saveEnv(); precargarMotor(); toast(ENV.motorLocal ? "Reconocedor propio encendido" : "Reconocedor propio apagado"); go("ajustes"); };
     if ($("#fsr")) $("#fsr").onclick = () => { ENV.forzarSR = !ENV.forzarSR; if (ENV.srFalla) delete ENV.srFalla[modoApp()]; saveEnv(); toast(ENV.forzarSR ? "Medición automática encendida" : "Medición automática apagada"); go("ajustes"); };
     // Fuerza la descarga de la versión más reciente (no toca el historial, que vive aparte).
     $("#act").onclick = async () => {

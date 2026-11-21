@@ -79,7 +79,7 @@ Otros datos:
 
 ## 6. Estado actual
 
-Funciona y está publicado (versión 16):
+Funciona y está publicado (versión 19):
 - Bienvenida, diagnóstico, rutina diaria, progresión adaptativa, reporte semanal, rachas con comodines, 21 logros, recordatorio de calendario, respaldo.
 - Módulos: respiración, canto, articulación, lectura, improvisación, proyección, entonación, pausas.
 - Práctica jurídica: modo audiencia (penal y civil), construcción de argumentos (Toulmin, Perelman, MacCormick, Atienza), mis asuntos.
@@ -111,6 +111,8 @@ Qué hay:
 - `sw.js` guarda `vendor/` una sola vez (primero la copia guardada), para no volver a bajar 40 MB.
 
 **Primera prueba en el iPhone del dueño (versión 17):** el motor cargó (18 s la primera vez, 0.2 s después) y en el primer intento devolvió «tú» al decir «uno, dos, tres»; en el segundo y tercero, nada. Cambios de la versión 18 para atacarlo: la app convierte el audio a 16 kHz antes de enviarlo (clase `Remuestreador` en `js/voz.js`), usa **un solo** reconocedor que se reinicia con `FinalResult()` (antes creaba y borraba uno por sesión), conserva un solo `AudioContext`, etiqueta cada sesión para descartar resultados tardíos, y la prueba de Ajustes muestra cuántos bloques de audio llegaron, el volumen máximo y cuántas respuestas dio el motor. Con esos tres datos se distingue si falla el audio del iPhone o el motor.
+
+**Segunda prueba (versión 18, diagnóstico):** la carga tardó más de un minuto y «Terminé» no cerraba. Causa: el botón ya decía «Terminé» mientras el motor cargaba; al tocarlo, la sesión se cerraba pero la carga seguía y al terminar abría el micrófono por su cuenta (micrófono «huérfano»), lo que además trababa al medidor. Versión 19: el botón queda en «Cargando el reconocedor…» hasta que de verdad escucha (`mientrasCarga` en `js/voz.js`); si se detiene o se sale antes, la sesión se abandona sin abrir el micrófono (`_abandonar`); el motor se precarga en segundo plano al abrir la app si está encendido (`precargarMotor`); el contexto de audio del motor se pausa entre sesiones; el medidor ya no espera para siempre a que el audio arranque, y en el diagnóstico sin reconocimiento el botón no admite doble toque mientras se abre el micrófono.
 
 Qué se comprobó: en Chromium simulado el motor carga en unos 2 segundos, no viola la política de seguridad, admite varias sesiones seguidas y libera el micrófono.
 
